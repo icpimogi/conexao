@@ -1,0 +1,6 @@
+{
+  "name": "Conexão ICPI CRM",
+  "description": "Sistema de CRM responsivo para gestão de contatos, filiais e disparos de mensagens WhatsApp/SMS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

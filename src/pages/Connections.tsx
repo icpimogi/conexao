@@ -48,8 +48,16 @@ export const Connections: React.FC = () => {
     setWaStatus('pairing');
   };
 
-  const [configs, setConfigs] = useState<Record<string, { apiKey: string, senderId: string, password?: string }>>({});
-  const [currentSettings, setCurrentSettings] = useState({ apiKey: '', senderId: '', password: '' });
+  const [configs, setConfigs] = useState<Record<string, { apiKey: string, senderId: string, password?: string, platform?: string, accessToken?: string, phoneNumberId?: string, wabaId?: string }>>({});
+  const [currentSettings, setCurrentSettings] = useState({ 
+    apiKey: '', 
+    senderId: '', 
+    password: '', 
+    platform: 'session', 
+    accessToken: '', 
+    phoneNumberId: '', 
+    wabaId: '' 
+  });
 
   const smsProviders = [
     { id: 'zenvia', name: 'Zenvia', description: 'API brasileira de alta performance para SMS.', status: 'stable' },
@@ -69,7 +77,16 @@ export const Connections: React.FC = () => {
   // Update form when provider changes
   React.useEffect(() => {
     if (activeProvider) {
-      setCurrentSettings(configs[activeProvider] || { apiKey: '', senderId: '', password: '' });
+      const saved = configs[activeProvider] || {};
+      setCurrentSettings({
+        apiKey: saved.apiKey || '',
+        senderId: saved.senderId || '',
+        password: saved.password || '',
+        platform: saved.platform || 'session',
+        accessToken: saved.accessToken || '',
+        phoneNumberId: saved.phoneNumberId || '',
+        wabaId: saved.wabaId || ''
+      });
     }
   }, [activeProvider, configs]);
 
@@ -87,6 +104,8 @@ export const Connections: React.FC = () => {
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
   };
+
+  const [waMode, setWaMode] = useState<'session' | 'official'>('session');
 
   return (
     <div className="space-y-10 max-w-6xl mx-auto pb-20">
@@ -121,12 +140,77 @@ export const Connections: React.FC = () => {
                 {waStatus === 'connected' ? 'Conectado' : waStatus === 'pairing' ? 'Aguardando...' : 'Desconectado'}
               </div>
             </div>
-            <h2 className="text-xl font-bold text-neutral-900 font-display">WhatsApp Business</h2>
-            <p className="text-xs text-neutral-500 mt-1">Conecte sua conta para envio automático de mensagens.</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-neutral-900 font-display">WhatsApp Business</h2>
+                <p className="text-xs text-neutral-500 mt-1">Conecte sua conta para envio automático.</p>
+              </div>
+              <div className="flex bg-neutral-200/50 p-1 rounded-xl">
+                 <button 
+                  onClick={() => setWaMode('session')}
+                  className={cn("px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all", waMode === 'session' ? "bg-white text-primary-600 shadow-sm" : "text-neutral-500")}
+                 >Sessão</button>
+                 <button 
+                  onClick={() => setWaMode('official')}
+                  className={cn("px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all", waMode === 'official' ? "bg-white text-primary-600 shadow-sm" : "text-neutral-500")}
+                 >OFICIAL</button>
+              </div>
+            </div>
           </div>
 
           <div className="p-8 flex-1 flex flex-col justify-center">
-            {waStatus === 'disabled' ? (
+            {waMode === 'official' ? (
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">Access Token (Meta Cloud API)</label>
+                    <input 
+                      type="password"
+                      value={currentSettings.accessToken}
+                      onChange={(e) => setCurrentSettings({ ...currentSettings, accessToken: e.target.value })}
+                      className="w-full px-4 h-11 rounded-xl bg-neutral-50 border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm font-mono"
+                      placeholder="EAAGz..."
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">Phone Number ID</label>
+                      <input 
+                        value={currentSettings.phoneNumberId}
+                        onChange={(e) => setCurrentSettings({ ...currentSettings, phoneNumberId: e.target.value })}
+                        className="w-full px-4 h-11 rounded-xl bg-neutral-50 border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                        placeholder="1234560000"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">WABA ID (Opcional)</label>
+                      <input 
+                        value={currentSettings.wabaId}
+                        onChange={(e) => setCurrentSettings({ ...currentSettings, wabaId: e.target.value })}
+                        className="w-full px-4 h-11 rounded-xl bg-neutral-50 border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                        placeholder="987654321"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <Button 
+                   onClick={() => {
+                    handleSaveSettings();
+                    setWaStatus('connected');
+                   }}
+                   className="w-full bg-primary-600 hover:bg-primary-700 rounded-2xl h-12 font-bold shadow-lg shadow-primary-100"
+                >
+                  Salvar e Ativar API Oficial
+                </Button>
+                <div className="p-4 bg-primary-50 rounded-2xl border border-primary-100">
+                  <p className="text-[10px] text-primary-600 font-medium leading-relaxed">
+                    A API Oficial da Meta requer que você tenha um App configurado no <a href="https://developers.facebook.com" target="_blank" rel="noreferrer" className="underline font-bold">Meta Developers</a>. 
+                    <br/>
+                    <span className="opacity-70">Precisa de ajuda? <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank" rel="noreferrer" className="underline">Ver guia oficial de configuração</a></span>
+                  </p>
+                </div>
+              </div>
+            ) : waStatus === 'disabled' ? (
               <div className="text-center space-y-6 py-8">
                 <div className="bg-neutral-50 h-32 w-32 mx-auto rounded-3xl flex items-center justify-center border-2 border-dashed border-neutral-200">
                   <QrCode className="h-12 w-12 text-neutral-300" />
@@ -310,19 +394,23 @@ export const Connections: React.FC = () => {
                   <div className="space-y-4">
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">
-                        {activeProvider === 'facilita' ? 'Usuário' : 'Sender ID / Número Remetente'}
+                        {activeProvider === 'facilita' ? 'Usuário' : 
+                         activeProvider === 'twilio' ? 'Account SID' :
+                         activeProvider === 'aws' ? 'App ID' : 'Sender ID'}
                       </label>
                       <input 
                         value={currentSettings.senderId}
                         onChange={(e) => setCurrentSettings({ ...currentSettings, senderId: e.target.value })}
                         className="w-full px-4 h-11 rounded-xl bg-neutral-50 border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-                        placeholder={activeProvider === 'facilita' ? 'Seu usuário' : 'Ex: CONEXAO_SMS'}
+                        placeholder={activeProvider === 'facilita' ? 'Seu usuário' : 'Ex: AC123... ou CONEXAO_SMS'}
                       />
                     </div>
                     
-                    {activeProvider === 'facilita' && (
+                    {(activeProvider === 'facilita' || activeProvider === 'twilio') && (
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">Senha</label>
+                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">
+                          {activeProvider === 'twilio' ? 'Auth Token' : 'Senha'}
+                        </label>
                         <input 
                           type="password"
                           value={currentSettings.password || ''}
@@ -335,7 +423,8 @@ export const Connections: React.FC = () => {
 
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">
-                        {activeProvider === 'facilita' ? 'Hash de segurança / Token' : 'API KEY / TOKEN'}
+                        {activeProvider === 'facilita' ? 'Hash de segurança' : 
+                         activeProvider === 'zenvia' ? 'X-API-TOKEN' : 'TOKEN / CHAVE'}
                       </label>
                       <input 
                         type="password"

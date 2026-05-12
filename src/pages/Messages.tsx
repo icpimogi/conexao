@@ -68,7 +68,8 @@ export const Messages: React.FC = () => {
     // Load history
     const historyRaw = localStorage.getItem('conexao_history');
     if (historyRaw) {
-      setHistory(JSON.parse(historyRaw));
+      const parsedHistory = JSON.parse(historyRaw);
+      setHistory(parsedHistory);
     } else {
       const initialHistory: Message[] = [
         { id: '1', contact_id: '1', user_id: '1', type: 'whatsapp', content: 'Olá! Como você está?', status: 'sent', created_at: new Date(Date.now() - 3600000).toISOString() },
@@ -157,13 +158,11 @@ export const Messages: React.FC = () => {
 
     setSending(true);
     try {
-      // Get config for the channel
       const configsRaw = localStorage.getItem('conexao_sms_configs');
       const configs = configsRaw ? JSON.parse(configsRaw) : {};
       
-      // Call real backend API for SMS
       if (sendChannel === 'sms') {
-        const providerId = Object.keys(configs)[0] || 'zenvia'; // Default or first enabled
+        const providerId = Object.keys(configs)[0] || 'facilita';
         const response = await fetch('/api/sms/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -177,8 +176,22 @@ export const Messages: React.FC = () => {
         const result = await response.json();
         if (!result.success) throw new Error(result.error);
       } else {
-        // WhatsApp logic would go here, for now it remains simulated but via API
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // WhatsApp logic
+        // We look for a config that has official API credentials
+        const waConfig = Object.values(configs).find((c: any) => c.accessToken && c.phoneNumberId);
+        
+        const response = await fetch('/api/whatsapp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platform: waConfig ? 'official' : 'session',
+            config: waConfig || {},
+            to: selectedContact.phone,
+            message: messageText
+          })
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error);
       }
 
       const newMessage: Message = {
@@ -218,7 +231,8 @@ export const Messages: React.FC = () => {
 
       const configsRaw = localStorage.getItem('conexao_sms_configs');
       const configs = configsRaw ? JSON.parse(configsRaw) : {};
-      const providerId = Object.keys(configs)[0] || 'zenvia';
+      const smsProviderId = Object.keys(configs)[0] || 'facilita';
+      const waConfig = Object.values(configs).find((c: any) => c.accessToken && c.phoneNumberId);
 
       const newMessages: Message[] = [];
 
@@ -229,8 +243,19 @@ export const Messages: React.FC = () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              provider: providerId,
-              config: configs[providerId],
+              provider: smsProviderId,
+              config: configs[smsProviderId],
+              to: person.phone,
+              message: bulkMessageText.replace('{{nome}}', person.name)
+            })
+          });
+        } else {
+          await fetch('/api/whatsapp/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              platform: waConfig ? 'official' : 'session',
+              config: waConfig || {},
               to: person.phone,
               message: bulkMessageText.replace('{{nome}}', person.name)
             })
@@ -820,7 +845,7 @@ export const Messages: React.FC = () => {
                   </label>
                   <textarea 
                     className="w-full h-24 p-5 bg-neutral-50 rounded-2xl border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm font-medium"
-                    value={editingAutomation.whatsapp_template}
+                    value={editingAutomation.whatsapp_template || ''}
                     onChange={(e) => setEditingAutomation({ ...editingAutomation, whatsapp_template: e.target.value })}
                   />
                   <p className="text-[9px] text-neutral-400 font-bold ml-1 uppercase">Dica: Use {"{{nome}}"} para personalizar com o nome do contato.</p>
@@ -833,7 +858,7 @@ export const Messages: React.FC = () => {
                   </label>
                   <textarea 
                     className="w-full h-24 p-5 bg-neutral-50 rounded-2xl border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm font-medium"
-                    value={editingAutomation.sms_template}
+                    value={editingAutomation.sms_template || ''}
                     onChange={(e) => setEditingAutomation({ ...editingAutomation, sms_template: e.target.value })}
                   />
                </div>

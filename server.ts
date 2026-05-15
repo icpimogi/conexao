@@ -9,88 +9,80 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Health check
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   // API Routes
   app.post("/api/sms/send", async (req, res) => {
+    console.log(`[SERVER] POST /api/sms/send received`);
     const { provider, config, to, message } = req.body;
 
     try {
       if (provider === 'facilita') {
-        const { senderId: user, password, apiKey: token } = config;
-        let cleanTo = to.replace(/\D/g, '');
+        const user = String(config.senderId || '').trim();
+        const password = String(config.password || '').trim();
         
-        // Some Facilita accounts require the 55 (Brazil country code)
-        // Others specifically DON'T want it if the API is configured for local.
-        // We will try both if the first fails.
-        const recipients = [cleanTo];
-        if (cleanTo.length === 11 && !cleanTo.startsWith('55')) {
-          recipients.push('55' + cleanTo);
-        } else if (cleanTo.startsWith('55')) {
-          recipients.push(cleanTo.slice(2));
+        if (!user || !password) {
+          return res.status(400).json({ success: false, error: "Credenciais Facilita (Usuário/Senha) não configuradas." });
         }
+
+        // 1. Accent removal (JSON doesn't strictly need XML escaping, but normalization is good)
+        const cleanMessage = message.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+        // 2. Comprehensive Phone Number Normalization for Brazil (Facilita prefers DDD + Number, no country code)
+        let cleanTo = String(to || '').replace(/\D/g, '');
         
-        const cleanToken = token ? (token.startsWith('hashS=') ? token.split('hashS=')[1] : token) : '';
+        // Remove country code if present
+        if (cleanTo.startsWith('55')) cleanTo = cleanTo.slice(2);
+        // Remove leading zero
+        if (cleanTo.startsWith('0')) cleanTo = cleanTo.slice(1);
+        
+        // Facilita Móvel REST URL (JSON)
+        // Using https as requested by the user previously
+        const restUrl = "https://www.facilitamovel.com.br/api/simpleSendJson.ft";
 
-        const endpoints = [
-          "https://www.facilitamovel.com.br/api/simpleSend.do",
-          "http://www.facilitamovel.com.br/api/simpleSend.do",
-          "http://www.facilitamovel.com.br/api/sendSms.do"
-        ];
-
-        const facilitaErrors: Record<string, string> = {
-          "01": "Usuário ou senha inválidos",
-          "02": "Saldo insuficiente",
-          "03": "Conta inativa ou bloqueada",
-          "04": "Destinatário inválido",
-          "05": "Mensagem vazia",
-          "06": "Destinatário na blacklist",
-          "07": "Destinatário inválido",
-          "08": "Mensagem muito longa",
-          "12": "Token/Hash inválido (externo)",
+        const payload = {
+          phone: cleanTo,
+          message: cleanMessage
         };
 
-        let lastFullError = "";
+        console.log(`[FACILITA REST] Sending to ${cleanTo} via ${restUrl}`);
 
-        for (const apiUrl of endpoints) {
-          for (const dest of recipients) {
-            try {
-              console.log(`[FACILITA] Attempting ${apiUrl} for ${dest}`);
-              const response = await axios.get(apiUrl, {
-                params: {
-                  user: user,
-                  password: password,
-                  destinatario: dest,
-                  msg: message,
-                  externo: cleanToken
-                },
-                timeout: 8000
-              });
-              
-              const rData = String(response.data).trim();
-              console.log(`[FACILITA] Response (${apiUrl}):`, rData);
-              
-              if (rData.toUpperCase().includes("OK") || rData.toUpperCase().includes("SUCESSO")) {
-                return res.json({ success: true, data: rData });
-              }
-              
-              // If we got a numeric error code, map it
-              const errorCode = rData.split(';')[1] || rData;
-              if (facilitaErrors[errorCode]) {
-                lastFullError = facilitaErrors[errorCode];
-              } else {
-                lastFullError = `Erro Facilita: ${rData}`;
-              }
+        const axiosConfig = {
+          headers: {
+            'Content-Type': 'application/json',
+            'user': user,
+            'password': password
+          },
+          timeout: 20000,
+          validateStatus: (status: number) => true
+        };
 
-            } catch (e: any) {
-              console.warn(`[FACILITA] Attempt failed:`, e.message);
-              lastFullError = e.message;
-            }
+        try {
+          const response = await axios.post(restUrl, payload, axiosConfig);
+          console.log(`[FACILITA REST] Response status: ${response.status}`, response.data);
+
+          // Facilita REST returns simple strings or JSON depending on the endpoint.
+          // For .ft (JSON endpoints), it should be JSON.
+          const data = response.data;
+          
+          // According to general Facilita logic:
+          // For REST, success usually returns a specific code or structure.
+          // Based on common REST implementations for Facilita:
+          if (response.status === 200 && (data === '5' || data === 5 || (typeof data === 'object' && !data.error))) {
+            return res.json({ success: true, data: data });
+          } else {
+            return res.status(400).json({ 
+              success: false, 
+              error: `Erro Facilita: ${JSON.stringify(data)}` 
+            });
           }
+        } catch (err: any) {
+          console.error(`[FACILITA REST ERROR]`, err.message);
+          return res.status(500).json({ success: false, error: `Erro de conexão Facilita REST: ${err.message}` });
         }
-        
-        return res.status(400).json({ 
-          success: false, 
-          error: lastFullError || "Falha na comunicação com Facilita Móvel. Verifique saldo e credenciais." 
-        });
       }
 
       if (provider === 'zenvia') {

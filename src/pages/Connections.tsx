@@ -504,6 +504,7 @@ export const Connections: React.FC = () => {
                                       setTestMode(false);
                                     }, 2000);
                                   } else {
+                                    alert("Falha no teste: " + result.error);
                                     console.error(result.error);
                                   }
                                 } catch (err) {

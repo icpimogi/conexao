@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/src/components/ui/Button';
-import { cn } from '@/src/lib/utils';
+import { cn, formatPhone } from '@/src/lib/utils';
 import { Contact, Automation, Message, Branch, Tag } from '@/src/types';
 
 export const Messages: React.FC = () => {
@@ -107,49 +107,95 @@ export const Messages: React.FC = () => {
     const today = new Date().toISOString().split('T')[0];
     
     if (lastRunStr !== today) {
-      const currentAutomations = JSON.parse(localStorage.getItem('conexao_automations') || '[]');
-      const birthdayAutomation = currentAutomations.find((a: any) => a.type === 'birthday' && a.enabled);
-      
-      if (birthdayAutomation) {
-        const allContacts = JSON.parse(localStorage.getItem('conexao_contacts') || '[]');
-        const todayMonthDay = new Date().toISOString().slice(5, 10); // MM-DD
+      const runBirthdayAutomation = async () => {
+        const currentAutomations = JSON.parse(localStorage.getItem('conexao_automations') || '[]');
+        const birthdayAutomation = currentAutomations.find((a: any) => a.type === 'birthday' && a.enabled);
         
-        const birthdayPeople = allContacts.filter((c: any) => c.birth_date && c.birth_date.slice(5, 10) === todayMonthDay);
-        
-        if (birthdayPeople.length > 0) {
-          const currentHistory = JSON.parse(localStorage.getItem('conexao_history') || '[]');
-          const newMessages: any[] = [];
+        if (birthdayAutomation) {
+          const allContacts = JSON.parse(localStorage.getItem('conexao_contacts') || '[]');
+          const todayMonthDay = new Date().toISOString().slice(5, 10); // MM-DD
           
-          birthdayPeople.forEach((person: any) => {
-            // WhatsApp message
-            newMessages.push({
-              id: Math.random().toString(36).substr(2, 9),
-              contact_id: person.id,
-              user_id: '1',
-              type: 'whatsapp',
-              content: birthdayAutomation.whatsapp_template.replace('{{nome}}', person.name),
-              status: 'sent',
-              created_at: new Date().toISOString()
-            });
-            // SMS message
-            newMessages.push({
-              id: Math.random().toString(36).substr(2, 9),
-              contact_id: person.id,
-              user_id: '1',
-              type: 'sms',
-              content: birthdayAutomation.sms_template.replace('{{nome}}', person.name),
-              status: 'sent',
-              created_at: new Date().toISOString()
-            });
-          });
+          const birthdayPeople = allContacts.filter((c: any) => c.birth_date && c.birth_date.slice(5, 10) === todayMonthDay);
           
-          const updatedHistory = [...newMessages, ...currentHistory];
-          localStorage.setItem('conexao_history', JSON.stringify(updatedHistory));
-          setHistory(updatedHistory);
+          if (birthdayPeople.length > 0) {
+            const configsRaw = localStorage.getItem('conexao_sms_configs');
+            const configs = configsRaw ? JSON.parse(configsRaw) : {};
+            const smsProviderId = Object.keys(configs)[0] || 'facilita';
+            const waConfig = Object.values(configs).find((c: any) => c.accessToken && c.phoneNumberId);
+
+            const currentHistory = JSON.parse(localStorage.getItem('conexao_history') || '[]');
+            const newMessages: Message[] = [];
+            
+            for (const person of birthdayPeople) {
+              // WhatsApp message
+              if (birthdayAutomation.channel === 'whatsapp' || birthdayAutomation.channel === 'both') {
+                try {
+                  const content = (birthdayAutomation.whatsapp_template || '').replace('{{nome}}', person.name);
+                  await fetch('/api/whatsapp/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      platform: waConfig ? 'official' : 'session',
+                      config: waConfig || {},
+                      to: person.phone,
+                      message: content
+                    })
+                  });
+                  newMessages.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    contact_id: person.id,
+                    user_id: '1',
+                    type: 'whatsapp',
+                    content,
+                    status: 'sent',
+                    created_at: new Date().toISOString()
+                  });
+                } catch (e) {
+                  console.error("Erro automação WA:", e);
+                }
+              }
+
+              // SMS message
+              if (birthdayAutomation.channel === 'sms' || birthdayAutomation.channel === 'both') {
+                try {
+                  const content = (birthdayAutomation.sms_template || '').replace('{{nome}}', person.name);
+                  await fetch('/api/sms/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      provider: smsProviderId,
+                      config: configs[smsProviderId],
+                      to: person.phone,
+                      message: content
+                    })
+                  });
+                  newMessages.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    contact_id: person.id,
+                    user_id: '1',
+                    type: 'sms',
+                    content,
+                    status: 'sent',
+                    created_at: new Date().toISOString()
+                  });
+                } catch (e) {
+                  console.error("Erro automação SMS:", e);
+                }
+              }
+            }
+            
+            if (newMessages.length > 0) {
+              const updatedHistory = [...newMessages, ...currentHistory];
+              localStorage.setItem('conexao_history', JSON.stringify(updatedHistory));
+              setHistory(updatedHistory);
+            }
+          }
+          
+          localStorage.setItem('conexao_birthday_last_run', today);
         }
-        
-        localStorage.setItem('conexao_birthday_last_run', today);
-      }
+      };
+
+      runBirthdayAutomation();
     }
   }, []);
 
@@ -379,7 +425,7 @@ export const Messages: React.FC = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold text-neutral-800 truncate">{contact.name}</p>
-                      <p className="text-[10px] text-neutral-400 font-medium">{contact.phone}</p>
+                      <p className="text-[10px] text-neutral-400 font-medium">{formatPhone(contact.phone)}</p>
                     </div>
                   </button>
                 ))}
@@ -397,7 +443,7 @@ export const Messages: React.FC = () => {
                       </div>
                       <div>
                         <h3 className="text-lg font-bold text-neutral-900 leading-tight">{selectedContact.name}</h3>
-                        <p className="text-[10px] text-primary-500 font-bold uppercase tracking-widest">{selectedContact.phone}</p>
+                        <p className="text-[10px] text-primary-500 font-bold uppercase tracking-widest">{formatPhone(selectedContact.phone)}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 bg-neutral-50 p-1.5 rounded-2xl">
@@ -780,7 +826,7 @@ export const Messages: React.FC = () => {
                                  </div>
                                  <div>
                                     <p className="text-xs font-bold text-neutral-800">{contact?.name || 'Inconhecido'}</p>
-                                    <p className="text-[9px] text-neutral-400 font-medium">{contact?.phone}</p>
+                                    <p className="text-[9px] text-neutral-400 font-medium">{contact?.phone ? formatPhone(contact.phone) : ''}</p>
                                  </div>
                               </div>
                            </td>

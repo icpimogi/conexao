@@ -29,7 +29,7 @@ import {
   Upload,
   Download
 } from 'lucide-react';
-import { cn } from '@/src/lib/utils';
+import { cn, formatPhone, normalizePhoneNumber } from '@/src/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ContactModalProps {
@@ -242,16 +242,26 @@ interface ContactProfileModalProps {
   branches: Branch[];
   tags: Tag[];
   onRefreshHistory: () => void;
+  initialChannel?: 'whatsapp' | 'sms';
 }
 
-const ContactProfileModal: React.FC<ContactProfileModalProps> = ({ isOpen, onClose, contact, branches, tags, onRefreshHistory }) => {
+const ContactProfileModal: React.FC<ContactProfileModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  contact, 
+  branches, 
+  tags, 
+  onRefreshHistory,
+  initialChannel = 'whatsapp'
+}) => {
   const [history, setHistory] = useState<Message[]>([]);
-  const [activeChannel, setActiveChannel] = useState<'whatsapp' | 'sms'>('whatsapp');
+  const [activeChannel, setActiveChannel] = useState<'whatsapp' | 'sms'>(initialChannel);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
+      setActiveChannel(initialChannel);
       const historyRaw = localStorage.getItem('conexao_history');
       if (historyRaw) {
         const allHistory = JSON.parse(historyRaw);
@@ -259,7 +269,7 @@ const ContactProfileModal: React.FC<ContactProfileModalProps> = ({ isOpen, onClo
         setHistory(allHistory.filter((m: Message) => String(m.contact_id) === String(contact.id)));
       }
     }
-  }, [isOpen, contact.id]);
+  }, [isOpen, contact.id, initialChannel]);
 
   const handleSend = async () => {
     if (!message.trim()) return;
@@ -272,7 +282,8 @@ const ContactProfileModal: React.FC<ContactProfileModalProps> = ({ isOpen, onClo
       let errorMsg = '';
 
       if (activeChannel === 'sms') {
-        const providerId = Object.keys(configs)[0] || 'facilita';
+        const configuredProviders = Object.keys(configs);
+        const providerId = configuredProviders.includes('facilita') ? 'facilita' : (configuredProviders[0] || 'facilita');
         const response = await fetch('/api/sms/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -363,7 +374,7 @@ const ContactProfileModal: React.FC<ContactProfileModalProps> = ({ isOpen, onClo
                 <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest pl-1">Telefone</p>
                 <div className="bg-white p-3 rounded-xl border border-neutral-100 text-xs font-bold text-neutral-700 flex items-center gap-2">
                   <Phone className="h-3.5 w-3.5 text-primary-500" />
-                  {contact.phone}
+                  {formatPhone(contact.phone)}
                 </div>
               </div>
               <div className="space-y-1">
@@ -491,6 +502,13 @@ export const Contacts: React.FC = () => {
   
   const [activeProfileContact, setActiveProfileContact] = useState<Contact | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileInitialChannel, setProfileInitialChannel] = useState<'whatsapp' | 'sms'>('whatsapp');
+
+  const openProfile = (contact: Contact, channel: 'whatsapp' | 'sms' = 'whatsapp') => {
+    setActiveProfileContact(contact);
+    setProfileInitialChannel(channel);
+    setIsProfileModalOpen(true);
+  };
 
   useEffect(() => {
     // Load branches first
@@ -498,10 +516,23 @@ export const Contacts: React.FC = () => {
     if (savedBranches) {
       setBranches(JSON.parse(savedBranches));
     } else {
-      setBranches([
-        { id: '1', name: 'Matriz Mogi Guaçu' } as any,
-        { id: '2', name: 'Filial São Paulo' } as any,
-      ]);
+      const defaultBranches = [
+        { 
+          id: '1', 
+          name: 'Sede Principal', 
+          address: 'Rua Paula Bueno, 123 - Centro, Mogi Guaçu - SP', 
+          street: 'Rua Paula Bueno',
+          number: '123',
+          neighborhood: 'Centro',
+          city: 'Mogi Guaçu',
+          state: 'SP',
+          cep: '13840-000',
+          phone: '(19) 3861-1234', 
+          created_at: new Date().toISOString() 
+        }
+      ];
+      setBranches(defaultBranches as Branch[]);
+      localStorage.setItem('conexao_branches', JSON.stringify(defaultBranches));
     }
 
     // Load tags
@@ -509,13 +540,39 @@ export const Contacts: React.FC = () => {
     if (savedTags) {
       setTags(JSON.parse(savedTags));
     } else {
-      setTags([
+      const defaultTags = [
         { id: '1', name: 'Membro', color: 'bg-blue-100 text-blue-700 border-blue-200' },
         { id: '2', name: 'Visitante', color: 'bg-green-100 text-green-700 border-green-200' },
-      ] as any);
+        { id: '3', name: 'VIP', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+      ];
+      setTags(defaultTags as Tag[]);
+      localStorage.setItem('conexao_tags', JSON.stringify(defaultTags));
     }
 
     fetchContacts();
+
+    // Migration: Clean up phone numbers in localStorage
+    const savedContacts = localStorage.getItem('conexao_contacts');
+    if (savedContacts) {
+      try {
+        const parsed = JSON.parse(savedContacts);
+        let changed = false;
+        const cleaned = parsed.map((c: Contact) => {
+          const normalized = normalizePhoneNumber(c.phone);
+          if (normalized !== c.phone) {
+            changed = true;
+            return { ...c, phone: normalized };
+          }
+          return c;
+        });
+        if (changed) {
+          localStorage.setItem('conexao_contacts', JSON.stringify(cleaned));
+          setContacts(cleaned);
+        }
+      } catch (e) {
+        console.error("Migration error:", e);
+      }
+    }
   }, []);
 
   const fetchContacts = async () => {
@@ -559,11 +616,14 @@ export const Contacts: React.FC = () => {
 
   const handleSave = (contactData: Partial<Contact>) => {
     let updated: Contact[];
+    const normalizedPhone = normalizePhoneNumber(contactData.phone || '');
+    const dataWithNormalizedPhone = { ...contactData, phone: normalizedPhone };
+
     if (editingContact) {
-      updated = contacts.map(c => c.id === editingContact.id ? { ...c, ...contactData } as Contact : c);
+      updated = contacts.map(c => c.id === editingContact.id ? { ...c, ...dataWithNormalizedPhone } as Contact : c);
     } else {
       const newContact = {
-        ...contactData,
+        ...dataWithNormalizedPhone,
         id: Math.random().toString(36).substr(2, 9),
       } as Contact;
       updated = [newContact, ...contacts];
@@ -702,7 +762,7 @@ export const Contacts: React.FC = () => {
                 >
                   <div 
                     className="flex justify-between items-start mb-4 cursor-pointer"
-                    onClick={() => { setActiveProfileContact(contact); setIsProfileModalOpen(true); }}
+                    onClick={() => openProfile(contact)}
                   >
                     <div className="flex items-center gap-3">
                       <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-primary-50 to-primary-100 flex items-center justify-center text-primary-600 font-bold text-lg group-hover:from-primary-600 group-hover:to-primary-700 group-hover:text-white transition-all duration-300">
@@ -751,7 +811,7 @@ export const Contacts: React.FC = () => {
                   <div className="space-y-2 mb-5">
                     <div className="flex items-center gap-3 text-xs text-neutral-600 font-medium">
                       <Smartphone className="h-3.5 w-3.5 text-primary-400" />
-                      {contact.phone}
+                      {formatPhone(contact.phone)}
                     </div>
                     <div className="flex items-center gap-3 text-xs text-neutral-600 font-medium truncate">
                       <Mail className="h-3.5 w-3.5 text-primary-400" />
@@ -768,7 +828,7 @@ export const Contacts: React.FC = () => {
                   <div className="grid grid-cols-2 gap-2">
                     <Button 
                       variant="primary" 
-                      onClick={() => { setActiveProfileContact(contact); setIsProfileModalOpen(true); }}
+                      onClick={() => openProfile(contact, 'whatsapp')}
                       className="rounded-2xl h-9 text-[10px] gap-2 font-bold bg-green-600 hover:bg-green-700 border-none shadow-green-100"
                     >
                       <MessageCircle className="h-3.5 w-3.5" />
@@ -776,7 +836,7 @@ export const Contacts: React.FC = () => {
                     </Button>
                     <Button 
                       variant="secondary" 
-                      onClick={() => { setActiveProfileContact(contact); setIsProfileModalOpen(true); }}
+                      onClick={() => openProfile(contact, 'sms')}
                       className="rounded-2xl h-9 text-[10px] gap-2 font-bold"
                     >
                       <Smartphone className="h-3.5 w-3.5" />
@@ -791,7 +851,7 @@ export const Contacts: React.FC = () => {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.98 }}
                   className="bg-white border border-neutral-100 rounded-2xl p-4 flex items-center justify-between group hover:shadow-md transition-all cursor-pointer"
-                  onClick={() => { setActiveProfileContact(contact); setIsProfileModalOpen(true); }}
+                  onClick={() => openProfile(contact)}
                 >
                   <div className="flex items-center gap-4">
                     <div className="h-10 w-10 rounded-xl bg-primary-50 flex items-center justify-center text-primary-600 font-bold group-hover:bg-primary-600 group-hover:text-white transition-all">
@@ -802,7 +862,7 @@ export const Contacts: React.FC = () => {
                       <div className="flex items-center gap-3">
                         <span className="text-[10px] text-neutral-400 font-bold flex items-center gap-1">
                           <Smartphone className="h-2.5 w-2.5" />
-                          {contact.phone}
+                          {formatPhone(contact.phone)}
                         </span>
                         <span className="text-[10px] text-neutral-400 font-bold flex items-center gap-1 uppercase tracking-wider">
                           <Building2 className="h-2.5 w-2.5" />
@@ -842,7 +902,7 @@ export const Contacts: React.FC = () => {
                     <div className="flex items-center gap-1.5 transition-all">
                       <Button 
                         size="sm"
-                        onClick={(e) => { e.stopPropagation(); setActiveProfileContact(contact); setIsProfileModalOpen(true); }}
+                        onClick={(e) => { e.stopPropagation(); openProfile(contact, 'whatsapp'); }}
                         className="bg-green-600 hover:bg-green-700 h-8 px-3 rounded-xl border-none text-[10px] font-bold shadow-sm shadow-green-100"
                       >
                         <MessageCircle className="h-3 w-3 mr-1.5" />
@@ -851,7 +911,7 @@ export const Contacts: React.FC = () => {
                       <Button 
                         size="sm"
                         variant="secondary"
-                        onClick={(e) => { e.stopPropagation(); setActiveProfileContact(contact); setIsProfileModalOpen(true); }}
+                        onClick={(e) => { e.stopPropagation(); openProfile(contact, 'sms'); }}
                         className="h-8 px-3 rounded-xl text-[10px] font-bold border-neutral-100"
                       >
                         <Smartphone className="h-3 w-3 mr-1.5" />
@@ -882,6 +942,7 @@ export const Contacts: React.FC = () => {
           branches={branches}
           tags={tags}
           onRefreshHistory={() => {}}
+          initialChannel={profileInitialChannel}
         />
       )}
 
@@ -966,7 +1027,7 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClose, bran
 
           contactsToInsert.push({
             name,
-            phone: phone.replace(/\D/g, ''),
+            phone: normalizePhoneNumber(phone),
             email: email || null,
             gender: (gender === 'M' || gender === 'F') ? gender : 'O',
             birth_date: formattedBirthDate,

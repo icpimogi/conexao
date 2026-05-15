@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/src/lib/supabase';
-import { User } from '@/src/types';
+import { User, Branch } from '@/src/types';
 import { Button } from '@/src/components/ui/Button';
 import { Input } from '@/src/components/ui/Input';
 import { 
@@ -26,9 +26,10 @@ interface UserModalProps {
   onClose: () => void;
   onSave: (userData: Partial<User>) => void;
   user?: User | null;
+  branches: Branch[];
 }
 
-const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, user }) => {
+const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, user, branches }) => {
   const [formData, setFormData] = useState<Partial<User> & { password?: string }>({
     name: '',
     email: '',
@@ -136,8 +137,9 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, user }) 
                   onChange={e => setFormData({ ...formData, branch_id: e.target.value })}
                 >
                   <option value="">Acesso Global</option>
-                  <option value="1">Matriz</option>
-                  <option value="2">Filial SP</option>
+                  {branches.map(branch => (
+                    <option key={branch.id} value={branch.id}>{branch.name}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -156,13 +158,45 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, user }) 
 export const Users: React.FC = () => {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
   useEffect(() => {
-    fetchUsers();
+    const loadData = async () => {
+      setLoading(true);
+      await Promise.all([fetchUsers(), fetchBranches()]);
+      setLoading(false);
+    };
+    loadData();
   }, []);
+
+  const fetchBranches = async () => {
+    try {
+      // Prioritize localStorage as used in Branches.tsx
+      const savedBranches = localStorage.getItem('conexao_branches');
+      if (savedBranches) {
+        setBranches(JSON.parse(savedBranches));
+        return;
+      }
+
+      // Fallback to supabase
+      const { data, error } = await supabase.from('branches').select('*');
+      if (error) throw error;
+      
+      const branchData = data || [
+        { id: '1', name: 'Sede Principal', created_at: '' },
+      ];
+      setBranches(branchData);
+      localStorage.setItem('conexao_branches', JSON.stringify(branchData));
+    } catch (error) {
+      console.error('Error fetching branches:', error);
+      setBranches([
+        { id: '1', name: 'Sede Principal', created_at: '' },
+      ]);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -175,11 +209,9 @@ export const Users: React.FC = () => {
       setUsers(data || []);
     } catch (error) {
       console.error(error);
-      // Fallback
+      // Fallback - Just the main admin if database fails
       setUsers([
         { id: '1', name: 'Admin Master', email: 'master@conexao.com', role: 'master', created_at: '' },
-        { id: '2', name: 'Gerente São Paulo', email: 'sp@conexao.com', role: 'admin', branch_id: '1', created_at: '' },
-        { id: '3', name: 'Operador Rio', email: 'rio@conexao.com', role: 'user', branch_id: '2', created_at: '' },
       ]);
     } finally {
       setLoading(false);
@@ -287,7 +319,7 @@ export const Users: React.FC = () => {
                     </td>
                     <td className="px-6 py-3 text-center">
                       <span className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">
-                         {user.branch_id === '1' ? 'Matriz' : user.branch_id === '2' ? 'Filial SP' : 'Global'}
+                         {user.branch_id ? (branches.find(b => b.id === user.branch_id)?.name || 'Filial não encontrada') : 'Global'}
                       </span>
                     </td>
                     <td className="px-6 py-3 text-center">
@@ -332,6 +364,7 @@ export const Users: React.FC = () => {
         onClose={() => { setIsModalOpen(false); setEditingUser(null); }}
         onSave={handleSave}
         user={editingUser}
+        branches={branches}
       />
     </div>
   );

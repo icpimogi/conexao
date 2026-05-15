@@ -7,8 +7,8 @@ const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '')
   .replace(/\/$/, ''); // Remove barra final
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim().replace(/^["']|["']$/g, '');
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase credentials missing. CRM will use mock mode or fail on real requests.');
+if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) {
+  console.error('Supabase credentials missing or invalid! Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set in your .env file.');
 }
 
 export const supabase = createClient(

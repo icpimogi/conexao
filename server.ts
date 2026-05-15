@@ -2,12 +2,19 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import axios from "axios";
+import * as dotenv from "dotenv";
+
+// Load environment variables from .env file
+dotenv.config();
 
 async function startServer() {
   const app = express();
+  // PORT fixed to 3000 as per environment constraints
   const PORT = 3000;
 
   app.use(express.json());
+
+  console.log(`[SERVER] Starting in ${process.env.NODE_ENV || 'development'} mode`);
 
   // Health check
   app.get("/api/health", (req, res) => {

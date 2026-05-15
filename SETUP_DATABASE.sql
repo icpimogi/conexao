@@ -39,37 +39,56 @@ VALUES (
     'active'
 ) ON CONFLICT (id) DO UPDATE SET role = 'master';
 
--- 5. CRIAÇÃO DA TABELA DE CONTATOS
+-- 5. CRIAÇÃO DA TABELA DE ETIQUETAS (TAGS)
+CREATE TABLE public.tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    color TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+INSERT INTO public.tags (name, color) VALUES 
+('Membro', 'bg-blue-100 text-blue-700 border-blue-200'),
+('Visitante', 'bg-green-100 text-green-700 border-green-200'),
+('Liderança', 'bg-purple-100 text-purple-700 border-purple-200');
+
+-- 6. CRIAÇÃO DA TABELA DE CONTATOS
 CREATE TABLE public.contacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    phone TEXT,
+    phone TEXT NOT NULL,
     email TEXT,
     notes TEXT,
+    birth_date DATE,
+    gender TEXT CHECK (gender IN ('M', 'F', 'O')),
+    tag_ids UUID[] DEFAULT '{}',
     user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
     branch_id UUID REFERENCES public.branches(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 6. CRIAÇÃO DA TABELA DE ATIVIDADES
+-- 7. CRIAÇÃO DA TABELA DE ATIVIDADES / MENSAGENS
 CREATE TABLE public.activities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     contact_id UUID REFERENCES public.contacts(id) ON DELETE CASCADE,
     user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
     type TEXT CHECK (type IN ('whatsapp', 'sms', 'call')),
+    status TEXT DEFAULT 'sent',
     content TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 7. HABILITAR SEGURANÇA (RLS)
+-- 8. HABILITAR SEGURANÇA (RLS)
 ALTER TABLE public.branches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 
--- 8. POLÍTICAS DE ACESSO (Permitir tudo para usuários logados para este MVP)
+-- 9. POLÍTICAS DE ACESSO (Permitir tudo para usuários logados para este MVP)
 CREATE POLICY "Allow all for authenticated" ON public.branches FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Allow all for authenticated" ON public.users FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Allow all for authenticated" ON public.contacts FOR ALL USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow all for authenticated" ON public.tags FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Allow all for authenticated" ON public.activities FOR ALL USING (auth.role() = 'authenticated');
 

@@ -44,7 +44,6 @@ export const Login: React.FC = () => {
   };
 
   const isConfigured = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL !== 'https://your-project.supabase.co';
-  const [showDebug, setShowDebug] = useState(false);
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary-50 via-neutral-50 to-white text-neutral-900">
@@ -53,30 +52,6 @@ export const Login: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-sm"
       >
-        <div className="mb-4 text-center">
-          <button 
-            onClick={() => setShowDebug(!showDebug)}
-            className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest hover:text-primary-600 transition-colors"
-          >
-            {showDebug ? 'Ocultar Diagnóstico' : 'Ver Diagnóstico de Conexão'}
-          </button>
-          
-          {showDebug && (
-            <motion.div 
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              className="mt-2 p-4 bg-white border border-neutral-200 rounded-2xl text-left text-[10px] font-mono space-y-2 overflow-hidden shadow-sm"
-            >
-              <p><strong>Configurado:</strong> {isConfigured ? '✅ Sim' : '❌ Não'}</p>
-              <p className="break-all"><strong>URL:</strong> {import.meta.env.VITE_SUPABASE_URL || 'Vazio'}</p>
-              {!import.meta.env.VITE_SUPABASE_URL?.startsWith('https://') && import.meta.env.VITE_SUPABASE_URL && (
-                <p className="text-red-500 font-bold">⚠️ Erro: A URL deve começar com https://</p>
-              )}
-              <p className="break-all text-neutral-400"><strong>Auth Error:</strong> {authError || 'Nenhum'}</p>
-            </motion.div>
-          )}
-        </div>
-
         {authError && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-800 text-[11px] font-semibold space-y-3">
             <p className="font-bold">⚠️ Erro de Perfil</p>

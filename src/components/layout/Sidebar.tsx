@@ -64,7 +64,7 @@ export const Sidebar: React.FC = () => {
              <Logo size="sm" />
              <div className="flex flex-col">
                <span className="font-display font-semibold text-base leading-tight text-primary-900">Conexão ICPI</span>
-               <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest whitespace-nowrap">Enterprise CRM</span>
+               <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest whitespace-nowrap">CAMPO DE UTINGA</span>
              </div>
           </div>
         </div>

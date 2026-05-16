@@ -85,31 +85,10 @@ ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 
--- 8. CRIAÇÃO DA TABELA DE AUTOMAÇÕES
-CREATE TABLE public.automations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    type TEXT NOT NULL,
-    enabled BOOLEAN DEFAULT true,
-    channel TEXT NOT NULL,
-    whatsapp_template TEXT,
-    sms_template TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 9. CRIAÇÃO DA TABELA DE CONFIGURAÇÕES
-CREATE TABLE public.settings (
-    id TEXT PRIMARY KEY,
-    value JSONB NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 10. POLÍTICAS DE ACESSO (Permitir tudo para usuários logados para este MVP)
+-- 9. POLÍTICAS DE ACESSO (Permitir tudo para usuários logados para este MVP)
 CREATE POLICY "Allow all for authenticated" ON public.branches FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Allow all for authenticated" ON public.users FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Allow all for authenticated" ON public.contacts FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Allow all for authenticated" ON public.tags FOR ALL USING (auth.role() = 'authenticated');
 CREATE POLICY "Allow all for authenticated" ON public.activities FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Allow all for authenticated" ON public.automations FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Allow all for authenticated" ON public.settings FOR ALL USING (auth.role() = 'authenticated');
 

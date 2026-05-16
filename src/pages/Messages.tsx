@@ -53,37 +53,150 @@ export const Messages: React.FC = () => {
   const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null);
 
   useEffect(() => {
-    const loadInitialData = async () => {
-      setLoading(true);
-      try {
-        const [
-          { data: contactsData },
-          { data: branchesData },
-          { data: tagsData },
-          { data: historyData },
-          { data: automationsData }
-        ] = await Promise.all([
-          supabase.from('contacts').select('*').order('name'),
-          supabase.from('branches').select('*').order('name'),
-          supabase.from('tags').select('*').order('name'),
-          supabase.from('activities').select('*').order('created_at', { ascending: false }).limit(50),
-          supabase.from('automations').select('*').order('name')
-        ]);
-        
-        if (contactsData) setContacts(contactsData);
-        if (branchesData) setBranches(branchesData);
-        if (tagsData) setTags(tagsData);
-        if (historyData) setHistory(historyData);
-        if (automationsData) setAutomations(automationsData);
-        
-      } catch (err) {
-        console.error("Error loading initial data:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    // Load contacts
+    const contactsRaw = localStorage.getItem('conexao_contacts');
+    if (contactsRaw) setContacts(JSON.parse(contactsRaw));
 
-    loadInitialData();
+    // Load branches
+    const branchesRaw = localStorage.getItem('conexao_branches');
+    if (branchesRaw) setBranches(JSON.parse(branchesRaw));
+
+    // Load tags
+    const tagsRaw = localStorage.getItem('conexao_tags');
+    if (tagsRaw) setTags(JSON.parse(tagsRaw));
+
+    // Load history
+    const historyRaw = localStorage.getItem('conexao_history');
+    if (historyRaw) {
+      const parsedHistory = JSON.parse(historyRaw);
+      setHistory(parsedHistory);
+    } else {
+      const initialHistory: Message[] = [
+        { id: '1', contact_id: '1', user_id: '1', type: 'whatsapp', content: 'Olá! Como você está?', status: 'sent', created_at: new Date(Date.now() - 3600000).toISOString() },
+        { id: '2', contact_id: '2', user_id: '1', type: 'sms', content: 'Seu código de confirmação é 123456', status: 'sent', created_at: new Date(Date.now() - 7200000).toISOString() },
+      ];
+      setHistory(initialHistory);
+      localStorage.setItem('conexao_history', JSON.stringify(initialHistory));
+    }
+
+    // Load automations
+    const automationsRaw = localStorage.getItem('conexao_automations');
+    if (automationsRaw) {
+      setAutomations(JSON.parse(automationsRaw));
+    } else {
+      const initialAutomations: Automation[] = [
+        { 
+          id: '1', 
+          name: 'Aniversariantes do Dia', 
+          type: 'birthday', 
+          enabled: true, 
+          channel: 'both', 
+          whatsapp_template: 'Parabéns {{nome}}! 🎂 Desejamos um dia abençoado e cheio de alegria!',
+          sms_template: 'Parabéns {{nome}}! Desejamos um feliz aniversário!',
+          created_at: new Date().toISOString() 
+        }
+      ];
+      setAutomations(initialAutomations);
+      localStorage.setItem('conexao_automations', JSON.stringify(initialAutomations));
+    }
+
+    setLoading(false);
+
+    // Simulate Birthday logic on load
+    const lastRunStr = localStorage.getItem('conexao_birthday_last_run');
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (lastRunStr !== today) {
+      const runBirthdayAutomation = async () => {
+        const currentAutomations = JSON.parse(localStorage.getItem('conexao_automations') || '[]');
+        const birthdayAutomation = currentAutomations.find((a: any) => a.type === 'birthday' && a.enabled);
+        
+        if (birthdayAutomation) {
+          const allContacts = JSON.parse(localStorage.getItem('conexao_contacts') || '[]');
+          const todayMonthDay = new Date().toISOString().slice(5, 10); // MM-DD
+          
+          const birthdayPeople = allContacts.filter((c: any) => c.birth_date && c.birth_date.slice(5, 10) === todayMonthDay);
+          
+          if (birthdayPeople.length > 0) {
+            const configsRaw = localStorage.getItem('conexao_sms_configs');
+            const configs = configsRaw ? JSON.parse(configsRaw) : {};
+            const smsProviderId = Object.keys(configs)[0] || 'facilita';
+            const waConfig = Object.values(configs).find((c: any) => c.accessToken && c.phoneNumberId);
+
+            const currentHistory = JSON.parse(localStorage.getItem('conexao_history') || '[]');
+            const newMessages: Message[] = [];
+            
+            for (const person of birthdayPeople) {
+              // WhatsApp message
+              if (birthdayAutomation.channel === 'whatsapp' || birthdayAutomation.channel === 'both') {
+                try {
+                  const content = (birthdayAutomation.whatsapp_template || '').replace('{{nome}}', person.name);
+                  await fetch('/api/whatsapp/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      platform: waConfig ? 'official' : 'session',
+                      config: waConfig || {},
+                      to: person.phone,
+                      message: content
+                    })
+                  });
+                  newMessages.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    contact_id: person.id,
+                    user_id: '1',
+                    type: 'whatsapp',
+                    content,
+                    status: 'sent',
+                    created_at: new Date().toISOString()
+                  });
+                } catch (e) {
+                  console.error("Erro automação WA:", e);
+                }
+              }
+
+              // SMS message
+              if (birthdayAutomation.channel === 'sms' || birthdayAutomation.channel === 'both') {
+                try {
+                  const content = (birthdayAutomation.sms_template || '').replace('{{nome}}', person.name);
+                  await fetch('/api/sms/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      provider: smsProviderId,
+                      config: configs[smsProviderId],
+                      to: person.phone,
+                      message: content
+                    })
+                  });
+                  newMessages.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    contact_id: person.id,
+                    user_id: '1',
+                    type: 'sms',
+                    content,
+                    status: 'sent',
+                    created_at: new Date().toISOString()
+                  });
+                } catch (e) {
+                  console.error("Erro automação SMS:", e);
+                }
+              }
+            }
+            
+            if (newMessages.length > 0) {
+              const updatedHistory = [...newMessages, ...currentHistory];
+              localStorage.setItem('conexao_history', JSON.stringify(updatedHistory));
+              setHistory(updatedHistory);
+            }
+          }
+          
+          localStorage.setItem('conexao_birthday_last_run', today);
+        }
+      };
+
+      runBirthdayAutomation();
+    }
   }, []);
 
   const handleSendMessage = async () => {
@@ -91,9 +204,8 @@ export const Messages: React.FC = () => {
 
     setSending(true);
     try {
-      // Get config from Supabase settings
-      const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'sms_configs').single();
-      const configs = settingsData?.value || {};
+      const configsRaw = localStorage.getItem('conexao_sms_configs');
+      const configs = configsRaw ? JSON.parse(configsRaw) : {};
       
       if (sendChannel === 'sms') {
         const providerId = Object.keys(configs)[0] || 'facilita';
@@ -110,7 +222,10 @@ export const Messages: React.FC = () => {
         const result = await response.json();
         if (!result.success) throw new Error(result.error);
       } else {
+        // WhatsApp logic
+        // We look for a config that has official API credentials
         const waConfig = Object.values(configs).find((c: any) => c.accessToken && c.phoneNumberId);
+        
         const response = await fetch('/api/whatsapp/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -125,20 +240,20 @@ export const Messages: React.FC = () => {
         if (!result.success) throw new Error(result.error);
       }
 
-      const { data: newMessage, error } = await supabase
-        .from('activities')
-        .insert([{
-          contact_id: selectedContact.id,
-          user_id: '1', // Should be dynamic
-          type: sendChannel,
-          content: messageText,
-          status: 'sent'
-        }])
-        .select()
-        .single();
+      const newMessage: Message = {
+        id: Math.random().toString(36).substr(2, 9),
+        contact_id: selectedContact.id,
+        user_id: '1',
+        type: sendChannel,
+        content: messageText,
+        status: 'sent',
+        created_at: new Date().toISOString()
+      };
 
-      if (error) throw error;
-      if (newMessage) setHistory([newMessage, ...history]);
+      const updatedHistory = [newMessage, ...history];
+      setHistory(updatedHistory);
+      localStorage.setItem('conexao_history', JSON.stringify(updatedHistory));
+      
       setMessageText('');
     } catch (err: any) {
       alert("Falha ao enviar: " + err.message);
@@ -160,15 +275,15 @@ export const Messages: React.FC = () => {
         return matchesGender && matchesBranch && matchesTags;
       });
 
-      const { data: settingsData } = await supabase.from('settings').select('*').eq('id', 'sms_configs').single();
-      const configs = settingsData?.value || {};
+      const configsRaw = localStorage.getItem('conexao_sms_configs');
+      const configs = configsRaw ? JSON.parse(configsRaw) : {};
       const smsProviderId = Object.keys(configs)[0] || 'facilita';
       const waConfig = Object.values(configs).find((c: any) => c.accessToken && c.phoneNumberId);
 
-      const inserts: any[] = [];
+      const newMessages: Message[] = [];
 
+      // Sequential sending for safety in demo
       for (const person of filtered) {
-        const content = bulkMessageText.replace('{{nome}}', person.name);
         if (bulkChannel === 'sms') {
           await fetch('/api/sms/send', {
             method: 'POST',
@@ -177,7 +292,7 @@ export const Messages: React.FC = () => {
               provider: smsProviderId,
               config: configs[smsProviderId],
               to: person.phone,
-              message: content
+              message: bulkMessageText.replace('{{nome}}', person.name)
             })
           });
         } else {
@@ -188,23 +303,25 @@ export const Messages: React.FC = () => {
               platform: waConfig ? 'official' : 'session',
               config: waConfig || {},
               to: person.phone,
-              message: content
+              message: bulkMessageText.replace('{{nome}}', person.name)
             })
           });
         }
 
-        inserts.push({
+        newMessages.push({
+          id: Math.random().toString(36).substr(2, 9),
           contact_id: person.id,
           user_id: '1',
           type: bulkChannel,
-          content,
-          status: 'sent'
+          content: bulkMessageText.replace('{{nome}}', person.name),
+          status: 'sent',
+          created_at: new Date().toISOString()
         });
       }
 
-      const { data: newMsgs, error } = await supabase.from('activities').insert(inserts).select();
-      if (error) throw error;
-      if (newMsgs) setHistory([...newMsgs, ...history]);
+      const updatedHistory = [...newMessages, ...history];
+      setHistory(updatedHistory);
+      localStorage.setItem('conexao_history', JSON.stringify(updatedHistory));
       
       setBulkMessageText('');
       setActiveTab('history');
@@ -215,36 +332,21 @@ export const Messages: React.FC = () => {
     }
   };
 
-  const toggleAutomation = async (id: string) => {
-    const automation = automations.find(a => a.id === id);
-    if (!automation) return;
-
-    try {
-      const { error } = await supabase
-        .from('automations')
-        .update({ enabled: !automation.enabled })
-        .eq('id', id);
-      
-      if (error) throw error;
-      setAutomations(automations.map(a => a.id === id ? { ...a, enabled: !a.enabled } : a));
-    } catch (err) {
-      console.error("Error toggling automation:", err);
-    }
+  const toggleAutomation = (id: string) => {
+    const updated = automations.map(a => 
+      a.id === id ? { ...a, enabled: !a.enabled } : a
+    );
+    setAutomations(updated);
+    localStorage.setItem('conexao_automations', JSON.stringify(updated));
   };
 
-  const saveAutomation = async (data: Partial<Automation>) => {
-    try {
-      const { error } = await supabase
-        .from('automations')
-        .update(data)
-        .eq('id', data.id);
-      
-      if (error) throw error;
-      setAutomations(automations.map(a => a.id === data.id ? { ...a, ...data } : a));
-      setEditingAutomation(null);
-    } catch (err) {
-      console.error("Error saving automation:", err);
-    }
+  const saveAutomation = (data: Partial<Automation>) => {
+    const updated = automations.map(a => 
+      a.id === data.id ? { ...a, ...data } : a
+    );
+    setAutomations(updated);
+    localStorage.setItem('conexao_automations', JSON.stringify(updated));
+    setEditingAutomation(null);
   };
 
   return (

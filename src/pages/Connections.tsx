@@ -68,13 +68,10 @@ export const Connections: React.FC = () => {
 
   // Load saved configs
   React.useEffect(() => {
-    const loadConfigs = async () => {
-      const { data, error } = await supabase.from('settings').select('*').eq('id', 'sms_configs').single();
-      if (!error && data) {
-        setConfigs(data.value);
-      }
-    };
-    loadConfigs();
+    const savedConfigs = localStorage.getItem('conexao_sms_configs');
+    if (savedConfigs) {
+      setConfigs(JSON.parse(savedConfigs));
+    }
   }, []);
 
   // Update form when provider changes
@@ -93,7 +90,7 @@ export const Connections: React.FC = () => {
     }
   }, [activeProvider, configs]);
 
-  const handleSaveSettings = async () => {
+  const handleSaveSettings = () => {
     if (!activeProvider) return;
     
     const updatedConfigs = {
@@ -101,19 +98,11 @@ export const Connections: React.FC = () => {
       [activeProvider]: currentSettings
     };
     
-    try {
-      const { error } = await supabase
-        .from('settings')
-        .upsert({ id: 'sms_configs', value: updatedConfigs });
-      
-      if (error) throw error;
-      
-      setConfigs(updatedConfigs);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2000);
-    } catch (err: any) {
-      alert("Erro ao salvar configurações: " + err.message);
-    }
+    setConfigs(updatedConfigs);
+    localStorage.setItem('conexao_sms_configs', JSON.stringify(updatedConfigs));
+    
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2000);
   };
 
   const [waMode, setWaMode] = useState<'session' | 'official'>('session');

@@ -511,86 +511,134 @@ export const Contacts: React.FC = () => {
   };
 
   useEffect(() => {
-    const loadInitialData = async () => {
-      setLoading(true);
-      try {
-        const [
-          { data: branchesData },
-          { data: tagsData }
-        ] = await Promise.all([
-          supabase.from('branches').select('*').order('name'),
-          supabase.from('tags').select('*').order('name')
-        ]);
-        
-        if (branchesData) setBranches(branchesData);
-        if (tagsData) setTags(tagsData);
-        
-        await fetchContacts();
-      } catch (err) {
-        console.error("Error loading initial data:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    // Load branches first
+    const savedBranches = localStorage.getItem('conexao_branches');
+    if (savedBranches) {
+      setBranches(JSON.parse(savedBranches));
+    } else {
+      const defaultBranches = [
+        { 
+          id: '1', 
+          name: 'Sede Principal', 
+          address: 'Rua Paula Bueno, 123 - Centro, Mogi Guaçu - SP', 
+          street: 'Rua Paula Bueno',
+          number: '123',
+          neighborhood: 'Centro',
+          city: 'Mogi Guaçu',
+          state: 'SP',
+          cep: '13840-000',
+          phone: '(19) 3861-1234', 
+          created_at: new Date().toISOString() 
+        }
+      ];
+      setBranches(defaultBranches as Branch[]);
+      localStorage.setItem('conexao_branches', JSON.stringify(defaultBranches));
+    }
 
-    loadInitialData();
+    // Load tags
+    const savedTags = localStorage.getItem('conexao_tags');
+    if (savedTags) {
+      setTags(JSON.parse(savedTags));
+    } else {
+      const defaultTags = [
+        { id: '1', name: 'Membro', color: 'bg-blue-100 text-blue-700 border-blue-200' },
+        { id: '2', name: 'Visitante', color: 'bg-green-100 text-green-700 border-green-200' },
+        { id: '3', name: 'VIP', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+      ];
+      setTags(defaultTags as Tag[]);
+      localStorage.setItem('conexao_tags', JSON.stringify(defaultTags));
+    }
+
+    fetchContacts();
+
+    // Migration: Clean up phone numbers in localStorage
+    const savedContacts = localStorage.getItem('conexao_contacts');
+    if (savedContacts) {
+      try {
+        const parsed = JSON.parse(savedContacts);
+        let changed = false;
+        const cleaned = parsed.map((c: Contact) => {
+          const normalized = normalizePhoneNumber(c.phone);
+          if (normalized !== c.phone) {
+            changed = true;
+            return { ...c, phone: normalized };
+          }
+          return c;
+        });
+        if (changed) {
+          localStorage.setItem('conexao_contacts', JSON.stringify(cleaned));
+          setContacts(cleaned);
+        }
+      } catch (e) {
+        console.error("Migration error:", e);
+      }
+    }
   }, []);
 
   const fetchContacts = async () => {
+    setLoading(true);
     try {
+      const savedContacts = localStorage.getItem('conexao_contacts');
+      if (savedContacts) {
+        setContacts(JSON.parse(savedContacts));
+        return;
+      }
+
       const { data, error } = await supabase
         .from('contacts')
-        .select('*')
+        .select(`
+          *,
+          branches (name)
+        `)
         .order('name');
       
       if (error) throw error;
-      setContacts(data || []);
+      const initialContacts = data || [
+        { id: '1', name: 'João Delgado', phone: '11999999999', email: 'joao@techflow.com', branch_id: '1', birth_date: '1990-05-15', notes: 'Lead qualificado' },
+        { id: '2', name: 'Ricardo Alves', phone: '21988888888', email: 'r.alves@global.com', branch_id: '2', birth_date: '1985-11-20', notes: 'Cliente recorrente' },
+        { id: '3', name: 'Beatriz Oliveira', phone: '31977777777', email: 'bea@fintech.co', branch_id: '1', birth_date: '1995-02-10', notes: 'Interesse em SMS' },
+      ];
+      setContacts(initialContacts as Contact[]);
+      localStorage.setItem('conexao_contacts', JSON.stringify(initialContacts));
     } catch (error) {
-      console.error("Error fetching contacts:", error);
-    }
-  };
-
-  const handleSave = async (contactData: Partial<Contact>) => {
-    setLoading(true);
-    const normalizedPhone = normalizePhoneNumber(contactData.phone || '');
-    const finalData = { ...contactData, phone: normalizedPhone };
-
-    try {
-      if (editingContact) {
-        const { error } = await supabase
-          .from('contacts')
-          .update(finalData)
-          .eq('id', editingContact.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('contacts')
-          .insert([finalData]);
-        if (error) throw error;
-      }
-      
-      await fetchContacts();
-      setIsModalOpen(false);
-      setEditingContact(null);
-    } catch (err: any) {
-      alert("Erro ao salvar: " + err.message);
+      console.error(error);
+      const fallback = [
+        { id: '1', name: 'João Delgado', phone: '11999999999', email: 'joao@techflow.com', branch_id: '1', birth_date: '1990-05-15', notes: 'Lead qualificado' },
+        { id: '2', name: 'Ricardo Alves', phone: '21988888888', email: 'r.alves@global.com', branch_id: '2', birth_date: '1985-11-20', notes: 'Cliente recorrente' },
+        { id: '3', name: 'Beatriz Oliveira', phone: '31977777777', email: 'bea@fintech.co', branch_id: '1', birth_date: '1995-02-10', notes: 'Interesse em SMS' },
+      ] as any;
+      setContacts(fallback);
+      localStorage.setItem('conexao_contacts', JSON.stringify(fallback));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleSave = (contactData: Partial<Contact>) => {
+    let updated: Contact[];
+    const normalizedPhone = normalizePhoneNumber(contactData.phone || '');
+    const dataWithNormalizedPhone = { ...contactData, phone: normalizedPhone };
+
+    if (editingContact) {
+      updated = contacts.map(c => c.id === editingContact.id ? { ...c, ...dataWithNormalizedPhone } as Contact : c);
+    } else {
+      const newContact = {
+        ...dataWithNormalizedPhone,
+        id: Math.random().toString(36).substr(2, 9),
+      } as Contact;
+      updated = [newContact, ...contacts];
+    }
+    setContacts(updated);
+    localStorage.setItem('conexao_contacts', JSON.stringify(updated));
+    setIsModalOpen(false);
+    setEditingContact(null);
+  };
+
+  const handleDelete = (id: string) => {
     if (confirm('Deseja realmente excluir este contato?')) {
-      try {
-        const { error } = await supabase
-          .from('contacts')
-          .delete()
-          .eq('id', id);
-        if (error) throw error;
-        await fetchContacts();
-      } catch (err: any) {
-        alert("Erro ao excluir: " + err.message);
-      }
+      const updated = contacts.filter(c => c.id !== id);
+      setContacts(updated);
+      localStorage.setItem('conexao_contacts', JSON.stringify(updated));
     }
   };
 
@@ -997,11 +1045,17 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({ isOpen, onClose, bran
       }
 
       try {
-        const { error } = await supabase
-          .from('contacts')
-          .insert(contactsToInsert);
+        const savedContacts = localStorage.getItem('conexao_contacts');
+        const currentContacts = savedContacts ? JSON.parse(savedContacts) : [];
         
-        if (error) throw error;
+        const newContacts = contactsToInsert.map(c => ({
+          ...c,
+          id: Math.random().toString(36).substr(2, 9),
+          created_at: new Date().toISOString()
+        }));
+
+        const updated = [...newContacts, ...currentContacts];
+        localStorage.setItem('conexao_contacts', JSON.stringify(updated));
         
         setProgress(100);
         setTimeout(() => {

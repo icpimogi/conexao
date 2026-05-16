@@ -166,21 +166,36 @@ export const Users: React.FC = () => {
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      try {
-        const { data: branchesData } = await supabase.from('branches').select('*').order('name');
-        if (branchesData) setBranches(branchesData);
-        await fetchUsers();
-      } catch (err) {
-        console.error("Error loading data:", err);
-      } finally {
-        setLoading(false);
-      }
+      await Promise.all([fetchUsers(), fetchBranches()]);
+      setLoading(false);
     };
     loadData();
   }, []);
 
   const fetchBranches = async () => {
-    // This is now handled in loadData for efficiency
+    try {
+      // Prioritize localStorage as used in Branches.tsx
+      const savedBranches = localStorage.getItem('conexao_branches');
+      if (savedBranches) {
+        setBranches(JSON.parse(savedBranches));
+        return;
+      }
+
+      // Fallback to supabase
+      const { data, error } = await supabase.from('branches').select('*');
+      if (error) throw error;
+      
+      const branchData = data || [
+        { id: '1', name: 'Sede Principal', created_at: '' },
+      ];
+      setBranches(branchData);
+      localStorage.setItem('conexao_branches', JSON.stringify(branchData));
+    } catch (error) {
+      console.error('Error fetching branches:', error);
+      setBranches([
+        { id: '1', name: 'Sede Principal', created_at: '' },
+      ]);
+    }
   };
 
   const fetchUsers = async () => {
@@ -194,49 +209,35 @@ export const Users: React.FC = () => {
       setUsers(data || []);
     } catch (error) {
       console.error(error);
-    }
-  };
-
-  const handleSave = async (userData: Partial<User> & { password?: string }) => {
-    const { password, ...userFields } = userData;
-    setLoading(true);
-
-    try {
-      if (editingUser) {
-        const { error } = await supabase
-          .from('users')
-          .update(userFields)
-          .eq('id', editingUser.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('users')
-          .insert([userFields]);
-        if (error) throw error;
-      }
-      
-      await fetchUsers();
-      setIsModalOpen(false);
-      setEditingUser(null);
-    } catch (err: any) {
-      alert("Erro ao salvar: " + err.message);
+      // Fallback - Just the main admin if database fails
+      setUsers([
+        { id: '1', name: 'Admin Master', email: 'master@conexao.com', role: 'master', created_at: '' },
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleSave = (userData: Partial<User> & { password?: string }) => {
+    const { password, ...userFields } = userData;
+    
+    if (editingUser) {
+      setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, ...userFields } as User : u));
+    } else {
+      const newUser = {
+        ...userFields,
+        id: Math.random().toString(36).substr(2, 9),
+        created_at: new Date().toISOString()
+      } as User;
+      setUsers(prev => [newUser, ...prev]);
+    }
+    setIsModalOpen(false);
+    setEditingUser(null);
+  };
+
+  const handleDelete = (id: string) => {
     if (confirm('Deseja realmente remover este usuário do sistema? Esta ação revogará todo o acesso instantaneamente.')) {
-      try {
-        const { error } = await supabase
-          .from('users')
-          .delete()
-          .eq('id', id);
-        if (error) throw error;
-        await fetchUsers();
-      } catch (err: any) {
-        alert("Erro ao excluir: " + err.message);
-      }
+      setUsers(prev => prev.filter(u => u.id !== id));
     }
   };
 

@@ -1,21 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
-const getEnv = (key: string) => {
-  const runtimeValue = (window as any).__RUNTIME_CONFIG__?.[key];
-  return runtimeValue || import.meta.env[key] || '';
-};
-
-const supabaseUrl = getEnv('VITE_SUPABASE_URL')
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '')
   .trim()
   .replace(/^["']|["']$/g, '')
   .replace(/\/rest\/v1\/?$/, '') // Remove /rest/v1/ se existir
   .replace(/\/$/, ''); // Remove barra final
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY').trim().replace(/^["']|["']$/g, '');
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim().replace(/^["']|["']$/g, '');
 
-if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('your-project')) {
-  console.error('⚠️ Supabase: Chaves não detectadas! Verifique se você adicionou VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no menu Settings/Configurações.');
-} else {
-  console.log('🔌 Supabase: Tentando conectar em', supabaseUrl.substring(0, 20) + '...');
+if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder') || supabaseUrl.includes('your-project')) {
+  console.error('Supabase credentials missing or invalid! Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.');
 }
 
 export const supabase = createClient(
@@ -25,25 +18,19 @@ export const supabase = createClient(
 
 // Helper to check if tables are functional
 export const checkTablesReady = async () => {
-  if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
-    return { ready: false, error: 'Configuração pendente' };
-  }
-  
   try {
-    // Teste simples para ver se o projeto existe
     const { error: branchErr } = await supabase.from('branches').select('id').limit(1);
+    const { error: contactErr } = await supabase.from('contacts').select('id').limit(1);
     
-    if (branchErr) {
-      console.error('❌ Supabase Erro:', branchErr.message);
+    if (branchErr || contactErr) {
       return { 
         ready: false, 
-        error: branchErr.message,
-        code: branchErr.code
+        error: branchErr?.message || contactErr?.message,
+        details: { branches: !branchErr, contacts: !contactErr }
       };
     }
     return { ready: true };
   } catch (err: any) {
-    console.error('❌ Supabase Catch Erro:', err);
     return { ready: false, error: err.message };
   }
 };

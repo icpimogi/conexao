@@ -3,7 +3,6 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import axios from "axios";
 import * as dotenv from "dotenv";
-import fs from "fs";
 
 // Load environment variables from .env file
 dotenv.config();
@@ -20,14 +19,6 @@ async function startServer() {
   // Health check
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
-
-  // Public config for frontend (handles build-time secret injection issues)
-  app.get("/api/config", (req, res) => {
-    res.json({
-      supabaseUrl: process.env.VITE_SUPABASE_URL || "",
-      supabaseAnonKey: process.env.VITE_SUPABASE_ANON_KEY || ""
-    });
   });
 
   // API Routes
@@ -165,6 +156,43 @@ async function startServer() {
     }
   });
 
+  // Diagnostic endpoint
+  app.get("/api/diagnostics", async (req, res) => {
+    let supabaseUrl = process.env.VITE_SUPABASE_URL || "";
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || "";
+    
+    // Sanitize URL if it contains /rest/v1
+    if (supabaseUrl.endsWith('/rest/v1') || supabaseUrl.endsWith('/rest/v1/')) {
+      supabaseUrl = supabaseUrl.replace(/\/rest\/v1\/?$/, '');
+    }
+    
+    const diagnostics = {
+      supabase: {
+        url_configured: !!supabaseUrl && !supabaseUrl.includes('placeholder'),
+        key_configured: !!supabaseKey && supabaseKey.length > 20,
+        url_format_ok: supabaseUrl?.startsWith('https://'),
+        url: supabaseUrl.substring(0, 15) + "..." // Show start for verification
+      },
+      env: {
+        node_env: process.env.NODE_ENV,
+        facilita_user: !!process.env.FACILITA_USER,
+      }
+    };
+
+    let connectionTest = "Não testado";
+    if (diagnostics.supabase.url_configured && diagnostics.supabase.key_configured) {
+      try {
+        // Test connection by fetching project info or just checking if the URL responds
+        const response = await axios.get(`${supabaseUrl}/rest/v1/?apikey=${supabaseKey}`, { timeout: 5000 });
+        connectionTest = response.status === 200 ? "✅ Conectado com sucesso!" : `❌ Erro: Status ${response.status}`;
+      } catch (err: any) {
+        connectionTest = `❌ Falha na conexão: ${err.message}. Verifique se a URL e a Anon Key estão corretas.`;
+      }
+    }
+
+    res.json({ ...diagnostics, connectionTest });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -173,64 +201,16 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // Production: serve static files and handle SPA fallback
-    // We use __dirname if available, or process.cwd() as fallback
-    const distPath = path.resolve(process.cwd(), "dist");
-    
-    console.log(`[SERVER] Production config:`);
-    console.log(` - distPath: ${distPath}`);
-    
-    // Serve static files (assets, images, etc)
+    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    
-    // SPA Fallback: ALL other routes should serve index.html
-    // This handles page refreshes on sub-routes like /contatos
-    app.get("*", (req, res) => {
-      // Check if the request is for an API (which should have been handled above)
-      if (req.url.startsWith('/api/')) {
-        return res.status(404).json({ error: "API route not found" });
-      }
-
-      const indexPath = path.join(distPath, "index.html");
-      
-      // We read the file and inject the environment variables at runtime
-      // This ensures that even if build-time injection failed, the frontend gets the keys
-      fs.readFile(indexPath, 'utf8', (err, html) => {
-        if (err) {
-          console.error(`[SERVER] Error reading index.html:`, err);
-          return res.status(500).send("Error loading app");
-        }
-
-        const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
-        const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || "";
-
-        const injectedHtml = html.replace(
-          '<head>',
-          `<head>
-    <script>
-      window.__RUNTIME_CONFIG__ = {
-        VITE_SUPABASE_URL: "${supabaseUrl}",
-        VITE_SUPABASE_ANON_KEY: "${supabaseKey}"
-      };
-    </script>`
-        );
-
-        res.send(injectedHtml);
-      });
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[SERVER] Conexão ICPI is running on port ${PORT}`);
-    console.log(`[SERVER] Mode: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`[SERVER] Static files path: ${path.resolve(process.cwd(), "dist")}`);
-  });
-
-  server.on('error', (err) => {
-    console.error('[SERVER] Critical error starting server:', err);
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
-startServer().catch(err => {
-  console.error("[SERVER] Failed to start server:", err);
-});
+startServer();

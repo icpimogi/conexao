@@ -196,16 +196,36 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    // Production: serve static files and handle SPA fallback
+    const distPath = path.resolve(process.cwd(), "dist");
+    console.log(`[SERVER] Serving static files from: ${distPath}`);
+    
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    
+    // SPA Fallback: Send index.html for any request that doesn't match an API or static file
+    app.get("*", (req, res) => {
+      const indexPath = path.join(distPath, "index.html");
+      console.log(`[SERVER] SPA Fallback: Serving index.html for ${req.url}`);
+      res.sendFile(indexPath, (err) => {
+        if (err) {
+          console.error(`[SERVER] Error sending index.html:`, err);
+          res.status(500).send("Error loading the application. Please try again later.");
+        }
+      });
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`[SERVER] Conexão ICPI is running on port ${PORT}`);
+    console.log(`[SERVER] Mode: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`[SERVER] Static files path: ${path.resolve(process.cwd(), "dist")}`);
+  });
+
+  server.on('error', (err) => {
+    console.error('[SERVER] Critical error starting server:', err);
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("[SERVER] Failed to start server:", err);
+});

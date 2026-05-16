@@ -7,8 +7,10 @@ const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '')
   .replace(/\/$/, ''); // Remove barra final
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim().replace(/^["']|["']$/g, '');
 
-if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder') || supabaseUrl.includes('your-project')) {
-  console.error('Supabase credentials missing or invalid! Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.');
+if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('your-project')) {
+  console.error('⚠️ Supabase: Chaves não detectadas! Verifique se você adicionou VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no menu Settings/Configurações.');
+} else {
+  console.log('🔌 Supabase: Tentando conectar em', supabaseUrl.substring(0, 20) + '...');
 }
 
 export const supabase = createClient(
@@ -18,19 +20,25 @@ export const supabase = createClient(
 
 // Helper to check if tables are functional
 export const checkTablesReady = async () => {
+  if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
+    return { ready: false, error: 'Configuração pendente' };
+  }
+  
   try {
+    // Teste simples para ver se o projeto existe
     const { error: branchErr } = await supabase.from('branches').select('id').limit(1);
-    const { error: contactErr } = await supabase.from('contacts').select('id').limit(1);
     
-    if (branchErr || contactErr) {
+    if (branchErr) {
+      console.error('❌ Supabase Erro:', branchErr.message);
       return { 
         ready: false, 
-        error: branchErr?.message || contactErr?.message,
-        details: { branches: !branchErr, contacts: !contactErr }
+        error: branchErr.message,
+        code: branchErr.code
       };
     }
     return { ready: true };
   } catch (err: any) {
+    console.error('❌ Supabase Catch Erro:', err);
     return { ready: false, error: err.message };
   }
 };

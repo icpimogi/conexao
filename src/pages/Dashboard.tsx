@@ -109,11 +109,29 @@ export const Dashboard: React.FC = () => {
             </div>
           )}
           {!checking && !supabaseStatus.ready && (
-            <div className="bg-amber-50 text-amber-600 px-3 py-1 rounded-xl text-[10px] font-bold border border-amber-100 flex items-center gap-1">
+            <div className="bg-amber-100 text-amber-800 px-3 py-1 rounded-xl text-[10px] font-bold border border-amber-200 flex items-center gap-1">
               <Zap className="h-3 w-3" />
-              MODO OFFLINE
+              CONFIGURAÇÃO PENDENTE
             </div>
           )}
+          <button 
+            onClick={async () => {
+              try {
+                const res = await fetch('/api/diagnostics');
+                const data = await res.json();
+                if (!data.supabase.url_configured || !data.supabase.key_configured) {
+                   alert("🚨 ERRO: As chaves NÃO foram encontradas no servidor.\n\nVerifique se no menu Settings > Secrets você usou EXATAMENTE os nomes:\nVITE_SUPABASE_URL\nVITE_SUPABASE_ANON_KEY");
+                } else {
+                   alert("💡 Conexão no Servidor: " + data.connectionTest + "\n\nSe aqui diz OK e o App continua Offline, recarregue a página (F5) para o Frontend atualizar as chaves.");
+                }
+              } catch (e) {
+                alert("Erro ao executar diagnóstico: " + (e as Error).message);
+              }
+            }}
+            className="bg-neutral-100 hover:bg-neutral-200 text-[10px] font-bold text-neutral-600 px-2 py-1 rounded ml-2 transition-colors"
+          >
+            Diagnóstico do Banco
+          </button>
           <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-neutral-100 shadow-sm ml-2">
             <Clock className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-medium text-neutral-600">{formattedDate}</span>

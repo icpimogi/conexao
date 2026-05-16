@@ -1,11 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '')
+const getEnv = (key: string) => {
+  const runtimeValue = (window as any).__RUNTIME_CONFIG__?.[key];
+  return runtimeValue || import.meta.env[key] || '';
+};
+
+const supabaseUrl = getEnv('VITE_SUPABASE_URL')
   .trim()
   .replace(/^["']|["']$/g, '')
   .replace(/\/rest\/v1\/?$/, '') // Remove /rest/v1/ se existir
   .replace(/\/$/, ''); // Remove barra final
-const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim().replace(/^["']|["']$/g, '');
+const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY').trim().replace(/^["']|["']$/g, '');
 
 if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('your-project')) {
   console.error('⚠️ Supabase: Chaves não detectadas! Verifique se você adicionou VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no menu Settings/Configurações.');

@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import axios from "axios";
 import * as dotenv from "dotenv";
+import fs from "fs";
 
 // Load environment variables from .env file
 dotenv.config();
@@ -19,6 +20,14 @@ async function startServer() {
   // Health check
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // Public config for frontend (handles build-time secret injection issues)
+  app.get("/api/config", (req, res) => {
+    res.json({
+      supabaseUrl: process.env.VITE_SUPABASE_URL || "",
+      supabaseAnonKey: process.env.VITE_SUPABASE_ANON_KEY || ""
+    });
   });
 
   // API Routes
@@ -183,11 +192,30 @@ async function startServer() {
       }
 
       const indexPath = path.join(distPath, "index.html");
-      res.sendFile(indexPath, (err) => {
+      
+      // We read the file and inject the environment variables at runtime
+      // This ensures that even if build-time injection failed, the frontend gets the keys
+      fs.readFile(indexPath, 'utf8', (err, html) => {
         if (err) {
-          console.error(`[SERVER] Failed to send index.html: ${err.message}`);
-          res.status(500).send("Error loading app. Please try refreshing.");
+          console.error(`[SERVER] Error reading index.html:`, err);
+          return res.status(500).send("Error loading app");
         }
+
+        const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
+        const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || "";
+
+        const injectedHtml = html.replace(
+          '<head>',
+          `<head>
+    <script>
+      window.__RUNTIME_CONFIG__ = {
+        VITE_SUPABASE_URL: "${supabaseUrl}",
+        VITE_SUPABASE_ANON_KEY: "${supabaseKey}"
+      };
+    </script>`
+        );
+
+        res.send(injectedHtml);
       });
     });
   }

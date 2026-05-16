@@ -165,19 +165,28 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     // Production: serve static files and handle SPA fallback
+    // We use __dirname if available, or process.cwd() as fallback
     const distPath = path.resolve(process.cwd(), "dist");
-    console.log(`[SERVER] Serving static files from: ${distPath}`);
     
+    console.log(`[SERVER] Production config:`);
+    console.log(` - distPath: ${distPath}`);
+    
+    // Serve static files (assets, images, etc)
     app.use(express.static(distPath));
     
-    // SPA Fallback: Send index.html for any request that doesn't match an API or static file
+    // SPA Fallback: ALL other routes should serve index.html
+    // This handles page refreshes on sub-routes like /contatos
     app.get("*", (req, res) => {
+      // Check if the request is for an API (which should have been handled above)
+      if (req.url.startsWith('/api/')) {
+        return res.status(404).json({ error: "API route not found" });
+      }
+
       const indexPath = path.join(distPath, "index.html");
-      console.log(`[SERVER] SPA Fallback: Serving index.html for ${req.url}`);
       res.sendFile(indexPath, (err) => {
         if (err) {
-          console.error(`[SERVER] Error sending index.html:`, err);
-          res.status(500).send("Error loading the application. Please try again later.");
+          console.error(`[SERVER] Failed to send index.html: ${err.message}`);
+          res.status(500).send("Error loading app. Please try refreshing.");
         }
       });
     });

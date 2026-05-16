@@ -121,8 +121,10 @@ export const Dashboard: React.FC = () => {
                 const data = await res.json();
                 if (!data.supabase.url_configured || !data.supabase.key_configured) {
                    alert("🚨 ERRO: As chaves NÃO foram encontradas no servidor.\n\nVerifique se no menu Settings > Secrets você usou EXATAMENTE os nomes:\nVITE_SUPABASE_URL\nVITE_SUPABASE_ANON_KEY");
+                } else if (data.connectionTest.includes('401')) {
+                   alert("🚨 ERRO 401 (Não Autorizado):\n\nA chave Anon foi encontrada mas é inválida para este projeto.\n\nConferência da Chave:\nComeça com: " + data.supabase.key_prefix + "\nTermina com: " + data.supabase.key_suffix + "\n\nSe esses caracteres não batem com sua 'anon public' key no Supabase, corrija no menu Secrets e dê F5.");
                 } else {
-                   alert("💡 Conexão no Servidor: " + data.connectionTest + "\n\nSe aqui diz OK e o App continua Offline, recarregue a página (F5) para o Frontend atualizar as chaves.");
+                   alert("💡 Resultado: " + data.connectionTest + "\n\nSe aqui diz OK e o App continua Offline, recarregue a página (F5) para o Frontend atualizar as chaves.");
                 }
               } catch (e) {
                 alert("Erro ao executar diagnóstico: " + (e as Error).message);

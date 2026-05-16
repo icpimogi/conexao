@@ -123,50 +123,58 @@ export const TagsPage: React.FC = () => {
   const fetchTags = async () => {
     setLoading(true);
     try {
-      const savedTags = localStorage.getItem('conexao_tags');
-      if (savedTags) {
-        setTags(JSON.parse(savedTags));
-      } else {
-        // Fallback or Initial Tags
-        const initialTags: Tag[] = [
-          { id: '1', name: 'Membro', color: 'bg-blue-100 text-blue-700 border-blue-200', created_at: new Date().toISOString() },
-          { id: '2', name: 'Visitante', color: 'bg-green-100 text-green-700 border-green-200', created_at: new Date().toISOString() },
-          { id: '3', name: 'Liderança', color: 'bg-purple-100 text-purple-700 border-purple-200', created_at: new Date().toISOString() },
-        ];
-        setTags(initialTags);
-        localStorage.setItem('conexao_tags', JSON.stringify(initialTags));
-      }
+      const { data, error } = await supabase
+        .from('tags')
+        .select('*')
+        .order('name');
+      
+      if (error) throw error;
+      setTags(data || []);
     } catch (error) {
-      console.error(error);
+      console.error("Error fetching tags:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSave = (tagData: Partial<Tag>) => {
-    let updatedTags: Tag[];
-    if (editingTag) {
-      updatedTags = tags.map(t => t.id === editingTag.id ? { ...t, ...tagData } as Tag : t);
-    } else {
-      const newTag = {
-        ...tagData,
-        id: Math.random().toString(36).substr(2, 9),
-        created_at: new Date().toISOString()
-      } as Tag;
-      updatedTags = [...tags, newTag];
-    }
+  const handleSave = async (tagData: Partial<Tag>) => {
+    setLoading(true);
+    try {
+      if (editingTag) {
+        const { error } = await supabase
+          .from('tags')
+          .update(tagData)
+          .eq('id', editingTag.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('tags')
+          .insert([tagData]);
+        if (error) throw error;
+      }
 
-    setTags(updatedTags);
-    localStorage.setItem('conexao_tags', JSON.stringify(updatedTags));
-    setIsModalOpen(false);
-    setEditingTag(null);
+      await fetchTags();
+      setIsModalOpen(false);
+      setEditingTag(null);
+    } catch (err: any) {
+      alert("Erro ao salvar: " + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    const updated = tags.filter(t => t.id !== id);
-    setTags(updated);
-    localStorage.setItem('conexao_tags', JSON.stringify(updated));
-    setIsDeleting(null);
+  const handleDelete = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('tags')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      await fetchTags();
+      setIsDeleting(null);
+    } catch (err: any) {
+      alert("Erro ao excluir: " + err.message);
+    }
   };
 
   return (

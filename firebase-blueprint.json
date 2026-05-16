@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "Branch": {
+      "title": "Branch",
+      "description": "A church branch or campus",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Branch name" },
+        "address": { "type": "string", "description": "Physical address" },
+        "phone": { "type": "string", "description": "Contact phone" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    },
+    "AppUser": {
+      "title": "App User",
+      "description": "User profile extension",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["master", "branch_admin"] },
+        "branchId": { "type": "string", "description": "Optional branch reference" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role", "status"]
+    },
+    "Tag": {
+      "title": "Tag",
+      "description": "Classification label for contacts",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "color": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "color"]
+    },
+    "Contact": {
+      "title": "Contact",
+      "description": "A person in the CRM",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "notes": { "type": "string" },
+        "birthDate": { "type": "string", "format": "date" },
+        "gender": { "type": "string", "enum": ["M", "F", "O"] },
+        "tagIds": { "type": "array", "description": "List of tag IDs" },
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "branchId": { "type": "string", "description": "Branch ID" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone"]
+    },
+    "Activity": {
+      "title": "Activity",
+      "description": "Interaction log (message, call)",
+      "type": "object",
+      "properties": {
+        "contactId": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["whatsapp", "sms", "call"] },
+        "status": { "type": "string", "enum": ["sent", "failed", "pending"] },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["contactId", "userId", "type", "content"]
+    }
+  },
+  "firestore": {
+    "/branches/{branchId}": {
+      "schema": "Branch",
+      "description": "Collection of branches"
+    },
+    "/users/{userId}": {
+      "schema": "AppUser",
+      "description": "Collection of user profiles"
+    },
+    "/tags/{tagId}": {
+      "schema": "Tag",
+      "description": "Global tags"
+    },
+    "/contacts/{contactId}": {
+      "schema": "Contact",
+      "description": "Collection of contacts"
+    },
+    "/activities/{activityId}": {
+      "schema": "Activity",
+      "description": "Interaction logs"
+    }
+  }
+}

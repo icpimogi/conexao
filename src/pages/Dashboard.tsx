@@ -114,26 +114,6 @@ export const Dashboard: React.FC = () => {
               CONFIGURAÇÃO PENDENTE
             </div>
           )}
-          <button 
-            onClick={async () => {
-              try {
-                const res = await fetch('/api/diagnostics');
-                const data = await res.json();
-                if (!data.supabase.url_configured || !data.supabase.key_configured) {
-                   alert("🚨 ERRO: As chaves NÃO foram encontradas no servidor.\n\nVerifique se no menu Settings > Secrets você usou EXATAMENTE os nomes:\nVITE_SUPABASE_URL\nVITE_SUPABASE_ANON_KEY");
-                } else if (data.connectionTest.includes('401')) {
-                   alert("🚨 ERRO 401 (Não Autorizado):\n\nA chave Anon foi encontrada mas é inválida para este projeto.\n\nConferência da Chave:\nComeça com: " + data.supabase.key_prefix + "\nTermina com: " + data.supabase.key_suffix + "\n\nSe esses caracteres não batem com sua 'anon public' key no Supabase, corrija no menu Secrets e dê F5.");
-                } else {
-                   alert("💡 Resultado: " + data.connectionTest + "\n\nSe aqui diz OK e o App continua Offline, recarregue a página (F5) para o Frontend atualizar as chaves.");
-                }
-              } catch (e) {
-                alert("Erro ao executar diagnóstico: " + (e as Error).message);
-              }
-            }}
-            className="bg-neutral-100 hover:bg-neutral-200 text-[10px] font-bold text-neutral-600 px-2 py-1 rounded ml-2 transition-colors"
-          >
-            Diagnóstico do Banco
-          </button>
           <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-neutral-100 shadow-sm ml-2">
             <Clock className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-medium text-neutral-600">{formattedDate}</span>

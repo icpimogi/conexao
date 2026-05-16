@@ -156,68 +156,6 @@ async function startServer() {
     }
   });
 
-  // Diagnostic endpoint
-  app.get("/api/diagnostics", async (req, res) => {
-    const rawUrl = process.env.VITE_SUPABASE_URL || "";
-    const rawKey = process.env.VITE_SUPABASE_ANON_KEY || "";
-    
-    // Normalize URL exactly like in frontend
-    const supabaseUrl = rawUrl.trim().replace(/^["']|["']$/g, '').replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '');
-    const supabaseKey = rawKey.trim().replace(/^["']|["']$/g, '');
-    
-    const diagnostics = {
-      supabase: {
-        url_configured: !!supabaseUrl && !supabaseUrl.includes('placeholder'),
-        key_configured: !!supabaseKey && supabaseKey.length > 20,
-        url_format_ok: supabaseUrl?.startsWith('https://'),
-        url_detected: supabaseUrl.substring(0, 15) + "...",
-        key_prefix: supabaseKey ? supabaseKey.substring(0, 8) + '...' : 'n/a',
-        key_suffix: supabaseKey ? '...' + supabaseKey.substring(supabaseKey.length - 5) : 'n/a',
-        url_has_rest_v1: rawUrl.includes('/rest/v1'),
-        url_has_spaces: rawUrl.length !== rawUrl.trim().length,
-      },
-      env: {
-        node_env: process.env.NODE_ENV,
-      }
-    };
-
-    let connectionTest = "Não testado";
-    if (diagnostics.supabase.url_configured && diagnostics.supabase.key_configured) {
-      try {
-        // Test connection by fetching project info
-        // We use the REST endpoint. Supabase requires the 'apikey' header AND 'Authorization: Bearer <key>'
-        const testUrl = `${supabaseUrl}/rest/v1/`;
-        console.log(`[SERVER] Diagnostic: Testing Supabase at ${supabaseUrl}`);
-        
-        const response = await axios.get(testUrl, { 
-          timeout: 5000,
-          params: { apikey: supabaseKey }, // Pass in query
-          headers: { 
-            'apikey': supabaseKey, // Pass in header
-            'Authorization': `Bearer ${supabaseKey}` // Pass as bearer
-          } 
-        });
-        
-        connectionTest = response.status === 200 ? "✅ Conectado com sucesso!" : `⚠️ Status inesperado: ${response.status}`;
-      } catch (err: any) {
-        const status = err.response?.status;
-        const msg = err.response?.data?.message || err.response?.data?.error || err.message;
-        
-        console.error(`[SERVER] Supabase Diagnostic Failed: ${status} - ${msg}`);
-
-        if (status === 404) {
-          connectionTest = `❌ Erro 404: Endereço não encontrado. Verifique se a URL "${supabaseUrl}" em Settings/Secrets está exatamente correta (deve terminar em .co ou .com, sem /rest/v1).`;
-        } else if (status === 401 || status === 403) {
-          connectionTest = `❌ Erro ${status}: Chave Anon inválida ou sem permissão para este projeto. Verifique se copiou a chave 'anon public' correta do projeto ${supabaseUrl.split('//')[1]?.split('.')[0]}.`;
-        } else {
-          connectionTest = `❌ Falha na conexão (${status || 'timeout'}): ${msg}`;
-        }
-      }
-    }
-
-    res.json({ ...diagnostics, connectionTest });
-  });
-
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

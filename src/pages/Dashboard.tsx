@@ -33,8 +33,11 @@ const StatCard = ({ title, value, change, icon: Icon, color }: any) => (
 );
 
 import { cn } from '@/src/lib/utils';
+import { checkTablesReady } from '../lib/supabase';
 
 export const Dashboard: React.FC = () => {
+  const [supabaseStatus, setSupabaseStatus] = React.useState<{ ready?: boolean; error?: string; details?: any }>({});
+  const [checking, setChecking] = React.useState(true);
   const [stats, setStats] = React.useState({
     totalContacts: 0,
     totalBranches: 0,
@@ -45,6 +48,14 @@ export const Dashboard: React.FC = () => {
   });
 
   React.useEffect(() => {
+    const checkStatus = async () => {
+      setChecking(true);
+      const status = await checkTablesReady();
+      setSupabaseStatus(status);
+      setChecking(false);
+    };
+    checkStatus();
+
     const contactsRaw = localStorage.getItem('conexao_contacts');
     const branchesRaw = localStorage.getItem('conexao_branches');
     const tagsRaw = localStorage.getItem('conexao_tags');
@@ -94,11 +105,60 @@ export const Dashboard: React.FC = () => {
           <h1 className="text-2xl font-semibold text-primary-950 font-display">Olá, Administrador!</h1>
           <p className="text-xs text-neutral-500 mt-1 uppercase tracking-widest font-bold">Painel de Controle Principal</p>
         </div>
-        <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-neutral-100 shadow-sm">
-          <Clock className="h-4 w-4 text-primary-500" />
-          <span className="text-sm font-medium text-neutral-600">{formattedDate}</span>
+        <div className="flex items-center gap-2">
+          {checking && <div className="text-[10px] text-neutral-400 font-bold uppercase animate-pulse">Verificando Banco...</div>}
+          {!checking && !supabaseStatus.ready && (
+            <div className="bg-red-50 text-red-600 px-3 py-1 rounded-xl text-[10px] font-bold border border-red-100 animate-bounce">
+              ⚠️ ERRO DE CONEXÃO
+            </div>
+          )}
+          {supabaseStatus.ready && (
+            <div className="bg-green-50 text-green-600 px-3 py-1 rounded-xl text-[10px] font-bold border border-green-100 flex items-center gap-1">
+              <Zap className="h-3 w-3" />
+              CONECTADO
+            </div>
+          )}
+          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-neutral-100 shadow-sm ml-2">
+            <Clock className="h-4 w-4 text-primary-500" />
+            <span className="text-sm font-medium text-neutral-600">{formattedDate}</span>
+          </div>
         </div>
       </div>
+
+      {!checking && !supabaseStatus.ready && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-50 border border-red-100 rounded-3xl p-6"
+        >
+          <h3 className="text-red-800 font-bold flex items-center gap-2">
+            <Zap className="h-5 w-5" />
+            Configuração do Banco de Dados Necessária
+          </h3>
+          <p className="text-red-700 text-sm mt-2">
+            O App não conseguiu se conectar ao seu projeto Supabase. Erro: <code className="bg-red-100 px-1.5 py-0.5 rounded">{supabaseStatus.error || 'Erro desconhecido'}</code>
+          </p>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white/50 p-4 rounded-2xl border border-red-200">
+              <h4 className="text-[10px] font-bold uppercase text-red-800 mb-2">Checklist de Solução:</h4>
+              <ul className="text-xs text-red-700 space-y-1.5">
+                <li>• Adicione <code className="bg-white px-1">VITE_SUPABASE_URL</code> no menu Settings</li>
+                <li>• Adicione <code className="bg-white px-1">VITE_SUPABASE_ANON_KEY</code> no menu Settings</li>
+                <li>• Execute o script <code className="bg-white px-1">SETUP_DATABASE.sql</code> no seu Supabase</li>
+              </ul>
+            </div>
+            <div className="bg-white/50 p-4 rounded-2xl border border-red-200 flex flex-col justify-center items-center text-center">
+              <p className="text-xs text-red-700 mb-3">Você também pode optar por uma configuração automática usando Firebase.</p>
+              <button 
+                onClick={() => window.alert('Para usar Firebase, solicite no chat "Configurar Firebase"')}
+                className="bg-red-600 text-white px-4 py-2 rounded-xl text-[10px] font-bold hover:bg-red-700 transition-all"
+              >
+                ALTERNAR PARA FIREBASE (AUTO)
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 

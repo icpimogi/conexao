@@ -156,6 +156,38 @@ async function startServer() {
     }
   });
 
+  // Diagnostic endpoint
+  app.get("/api/diagnostics", async (req, res) => {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || "";
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || "";
+    
+    const diagnostics = {
+      supabase: {
+        url_configured: !!supabaseUrl && !supabaseUrl.includes('placeholder'),
+        key_configured: !!supabaseKey && supabaseKey.length > 20,
+        url_format_ok: supabaseUrl?.startsWith('https://'),
+        url: supabaseUrl.substring(0, 15) + "..." // Show start for verification
+      },
+      env: {
+        node_env: process.env.NODE_ENV,
+        facilita_user: !!process.env.FACILITA_USER,
+      }
+    };
+
+    let connectionTest = "Não testado";
+    if (diagnostics.supabase.url_configured && diagnostics.supabase.key_configured) {
+      try {
+        // Test connection by fetching project info or just checking if the URL responds
+        const response = await axios.get(`${supabaseUrl}/rest/v1/?apikey=${supabaseKey}`, { timeout: 5000 });
+        connectionTest = response.status === 200 ? "✅ Conectado com sucesso!" : `❌ Erro: Status ${response.status}`;
+      } catch (err: any) {
+        connectionTest = `❌ Falha na conexão: ${err.message}. Verifique se a URL e a Anon Key estão corretas.`;
+      }
+    }
+
+    res.json({ ...diagnostics, connectionTest });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

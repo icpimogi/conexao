@@ -60,8 +60,7 @@ export interface Automation {
   type: 'birthday' | 'welcome' | 'custom';
   enabled: boolean;
   channel: 'whatsapp' | 'sms' | 'both';
-  whatsapp_template?: string;
-  sms_template?: string;
+  message_template: string;
   last_run?: string;
   created_at: string;
 }

@@ -23,6 +23,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/src/components/ui/Button';
 import { cn, formatPhone } from '@/src/lib/utils';
 import { Contact, Automation, Message, Branch, Tag } from '@/src/types';
+import { supabase } from '@/src/lib/supabase';
 
 export const Messages: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'manual' | 'bulk' | 'automations' | 'history'>('manual');
@@ -53,150 +54,48 @@ export const Messages: React.FC = () => {
   const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null);
 
   useEffect(() => {
-    // Load contacts
-    const contactsRaw = localStorage.getItem('conexao_contacts');
-    if (contactsRaw) setContacts(JSON.parse(contactsRaw));
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [
+          { data: contactsData },
+          { data: branchesData },
+          { data: tagsData },
+          { data: historyData },
+          { data: automationsData }
+        ] = await Promise.all([
+          supabase.from('contacts').select('*').order('name'),
+          supabase.from('branches').select('*').order('name'),
+          supabase.from('tags').select('*').order('name'),
+          supabase.from('activities').select('*').order('created_at', { ascending: false }).limit(50),
+          supabase.from('automations').select('*')
+        ]);
 
-    // Load branches
-    const branchesRaw = localStorage.getItem('conexao_branches');
-    if (branchesRaw) setBranches(JSON.parse(branchesRaw));
-
-    // Load tags
-    const tagsRaw = localStorage.getItem('conexao_tags');
-    if (tagsRaw) setTags(JSON.parse(tagsRaw));
-
-    // Load history
-    const historyRaw = localStorage.getItem('conexao_history');
-    if (historyRaw) {
-      const parsedHistory = JSON.parse(historyRaw);
-      setHistory(parsedHistory);
-    } else {
-      const initialHistory: Message[] = [
-        { id: '1', contact_id: '1', user_id: '1', type: 'whatsapp', content: 'Olá! Como você está?', status: 'sent', created_at: new Date(Date.now() - 3600000).toISOString() },
-        { id: '2', contact_id: '2', user_id: '1', type: 'sms', content: 'Seu código de confirmação é 123456', status: 'sent', created_at: new Date(Date.now() - 7200000).toISOString() },
-      ];
-      setHistory(initialHistory);
-      localStorage.setItem('conexao_history', JSON.stringify(initialHistory));
-    }
-
-    // Load automations
-    const automationsRaw = localStorage.getItem('conexao_automations');
-    if (automationsRaw) {
-      setAutomations(JSON.parse(automationsRaw));
-    } else {
-      const initialAutomations: Automation[] = [
-        { 
-          id: '1', 
-          name: 'Aniversariantes do Dia', 
-          type: 'birthday', 
-          enabled: true, 
-          channel: 'both', 
-          whatsapp_template: 'Parabéns {{nome}}! 🎂 Desejamos um dia abençoado e cheio de alegria!',
-          sms_template: 'Parabéns {{nome}}! Desejamos um feliz aniversário!',
-          created_at: new Date().toISOString() 
+        if (contactsData) setContacts(contactsData);
+        if (branchesData) setBranches(branchesData);
+        if (tagsData) setTags(tagsData);
+        if (historyData) {
+          // Map activities to Message interface
+          const mappedHistory: Message[] = historyData.map(a => ({
+            id: a.id,
+            contact_id: a.contact_id,
+            user_id: a.user_id,
+            type: a.type as 'whatsapp' | 'sms',
+            content: a.content,
+            status: a.status as 'sent' | 'failed' | 'pending',
+            created_at: a.created_at
+          }));
+          setHistory(mappedHistory);
         }
-      ];
-      setAutomations(initialAutomations);
-      localStorage.setItem('conexao_automations', JSON.stringify(initialAutomations));
-    }
+        if (automationsData) setAutomations(automationsData);
+      } catch (err: any) {
+        console.error("Erro ao carregar dados:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    setLoading(false);
-
-    // Simulate Birthday logic on load
-    const lastRunStr = localStorage.getItem('conexao_birthday_last_run');
-    const today = new Date().toISOString().split('T')[0];
-    
-    if (lastRunStr !== today) {
-      const runBirthdayAutomation = async () => {
-        const currentAutomations = JSON.parse(localStorage.getItem('conexao_automations') || '[]');
-        const birthdayAutomation = currentAutomations.find((a: any) => a.type === 'birthday' && a.enabled);
-        
-        if (birthdayAutomation) {
-          const allContacts = JSON.parse(localStorage.getItem('conexao_contacts') || '[]');
-          const todayMonthDay = new Date().toISOString().slice(5, 10); // MM-DD
-          
-          const birthdayPeople = allContacts.filter((c: any) => c.birth_date && c.birth_date.slice(5, 10) === todayMonthDay);
-          
-          if (birthdayPeople.length > 0) {
-            const configsRaw = localStorage.getItem('conexao_sms_configs');
-            const configs = configsRaw ? JSON.parse(configsRaw) : {};
-            const smsProviderId = Object.keys(configs)[0] || 'facilita';
-            const waConfig = Object.values(configs).find((c: any) => c.accessToken && c.phoneNumberId);
-
-            const currentHistory = JSON.parse(localStorage.getItem('conexao_history') || '[]');
-            const newMessages: Message[] = [];
-            
-            for (const person of birthdayPeople) {
-              // WhatsApp message
-              if (birthdayAutomation.channel === 'whatsapp' || birthdayAutomation.channel === 'both') {
-                try {
-                  const content = (birthdayAutomation.whatsapp_template || '').replace('{{nome}}', person.name);
-                  await fetch('/api/whatsapp/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      platform: waConfig ? 'official' : 'session',
-                      config: waConfig || {},
-                      to: person.phone,
-                      message: content
-                    })
-                  });
-                  newMessages.push({
-                    id: Math.random().toString(36).substr(2, 9),
-                    contact_id: person.id,
-                    user_id: '1',
-                    type: 'whatsapp',
-                    content,
-                    status: 'sent',
-                    created_at: new Date().toISOString()
-                  });
-                } catch (e) {
-                  console.error("Erro automação WA:", e);
-                }
-              }
-
-              // SMS message
-              if (birthdayAutomation.channel === 'sms' || birthdayAutomation.channel === 'both') {
-                try {
-                  const content = (birthdayAutomation.sms_template || '').replace('{{nome}}', person.name);
-                  await fetch('/api/sms/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      provider: smsProviderId,
-                      config: configs[smsProviderId],
-                      to: person.phone,
-                      message: content
-                    })
-                  });
-                  newMessages.push({
-                    id: Math.random().toString(36).substr(2, 9),
-                    contact_id: person.id,
-                    user_id: '1',
-                    type: 'sms',
-                    content,
-                    status: 'sent',
-                    created_at: new Date().toISOString()
-                  });
-                } catch (e) {
-                  console.error("Erro automação SMS:", e);
-                }
-              }
-            }
-            
-            if (newMessages.length > 0) {
-              const updatedHistory = [...newMessages, ...currentHistory];
-              localStorage.setItem('conexao_history', JSON.stringify(updatedHistory));
-              setHistory(updatedHistory);
-            }
-          }
-          
-          localStorage.setItem('conexao_birthday_last_run', today);
-        }
-      };
-
-      runBirthdayAutomation();
-    }
+    fetchData();
   }, []);
 
   const handleSendMessage = async () => {
@@ -204,55 +103,46 @@ export const Messages: React.FC = () => {
 
     setSending(true);
     try {
-      const configsRaw = localStorage.getItem('conexao_sms_configs');
-      const configs = configsRaw ? JSON.parse(configsRaw) : {};
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/sms/send', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({
+          provider: 'facilita', // Default for now
+          config: {}, // Server uses ENV
+          to: selectedContact.phone,
+          message: messageText
+        })
+      });
       
-      if (sendChannel === 'sms') {
-        const providerId = Object.keys(configs)[0] || 'facilita';
-        const response = await fetch('/api/sms/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            provider: providerId,
-            config: configs[providerId],
-            to: selectedContact.phone,
-            message: messageText
-          })
-        });
-        const result = await response.json();
-        if (!result.success) throw new Error(result.error);
-      } else {
-        // WhatsApp logic
-        // We look for a config that has official API credentials
-        const waConfig = Object.values(configs).find((c: any) => c.accessToken && c.phoneNumberId);
-        
-        const response = await fetch('/api/whatsapp/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            platform: waConfig ? 'official' : 'session',
-            config: waConfig || {},
-            to: selectedContact.phone,
-            message: messageText
-          })
-        });
-        const result = await response.json();
-        if (!result.success) throw new Error(result.error);
-      }
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error);
 
-      const newMessage: Message = {
-        id: Math.random().toString(36).substr(2, 9),
+      // Save to activities
+      const { data: activity, error: activityError } = await supabase.from('activities').insert({
         contact_id: selectedContact.id,
-        user_id: '1',
         type: sendChannel,
         content: messageText,
-        status: 'sent',
-        created_at: new Date().toISOString()
-      };
+        status: 'sent'
+      }).select().single();
 
-      const updatedHistory = [newMessage, ...history];
-      setHistory(updatedHistory);
-      localStorage.setItem('conexao_history', JSON.stringify(updatedHistory));
+      if (activityError) throw activityError;
+
+      if (activity) {
+        const newMessage: Message = {
+          id: activity.id,
+          contact_id: activity.contact_id,
+          user_id: activity.user_id,
+          type: activity.type,
+          content: activity.content,
+          status: activity.status,
+          created_at: activity.created_at
+        };
+        setHistory([newMessage, ...history]);
+      }
       
       setMessageText('');
     } catch (err: any) {
@@ -267,6 +157,7 @@ export const Messages: React.FC = () => {
     
     setSending(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const filtered = contacts.filter(c => {
         const matchesGender = bulkFilters.gender === 'all' || c.gender === bulkFilters.gender;
         const matchesBranch = bulkFilters.branch_id === 'all' || c.branch_id === bulkFilters.branch_id;
@@ -287,7 +178,10 @@ export const Messages: React.FC = () => {
         if (bulkChannel === 'sms') {
           await fetch('/api/sms/send', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`
+            },
             body: JSON.stringify({
               provider: smsProviderId,
               config: configs[smsProviderId],
@@ -298,7 +192,10 @@ export const Messages: React.FC = () => {
         } else {
           await fetch('/api/whatsapp/send', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`
+            },
             body: JSON.stringify({
               platform: waConfig ? 'official' : 'session',
               config: waConfig || {},
@@ -332,23 +229,6 @@ export const Messages: React.FC = () => {
     }
   };
 
-  const toggleAutomation = (id: string) => {
-    const updated = automations.map(a => 
-      a.id === id ? { ...a, enabled: !a.enabled } : a
-    );
-    setAutomations(updated);
-    localStorage.setItem('conexao_automations', JSON.stringify(updated));
-  };
-
-  const saveAutomation = (data: Partial<Automation>) => {
-    const updated = automations.map(a => 
-      a.id === data.id ? { ...a, ...data } : a
-    );
-    setAutomations(updated);
-    localStorage.setItem('conexao_automations', JSON.stringify(updated));
-    setEditingAutomation(null);
-  };
-
   return (
     <div className="space-y-8 max-w-6xl mx-auto pb-20">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -365,7 +245,6 @@ export const Messages: React.FC = () => {
           {[
             { id: 'manual', label: 'Envio Manual', icon: Send },
             { id: 'bulk', label: 'Envio em Massa', icon: Users },
-            { id: 'automations', label: 'Automações', icon: Zap },
             { id: 'history', label: 'Histórico', icon: History },
           ].map(tab => (
             <button
@@ -709,92 +588,6 @@ export const Messages: React.FC = () => {
           </motion.div>
         )}
 
-        {activeTab === 'automations' && (
-          <motion.div 
-            key="automations"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-6"
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {automations.map(automation => (
-                <div key={automation.id} className="bg-white rounded-[2.5rem] border border-neutral-100 shadow-sm overflow-hidden flex flex-col group hover:shadow-xl transition-all duration-500">
-                  <div className="p-8 border-b border-neutral-50">
-                    <div className="flex items-center justify-between mb-6">
-                      <div className={cn(
-                        "h-14 w-14 rounded-2xl flex items-center justify-center transition-all",
-                        automation.enabled ? "bg-primary-100 text-primary-600" : "bg-neutral-100 text-neutral-400"
-                      )}>
-                        {automation.type === 'birthday' ? <Calendar className="h-7 w-7" /> : <Zap className="h-7 w-7" />}
-                      </div>
-                      <button 
-                        onClick={() => toggleAutomation(automation.id)}
-                        className={cn(
-                          "w-12 h-6 rounded-full transition-all relative",
-                          automation.enabled ? "bg-green-500" : "bg-neutral-200"
-                        )}
-                      >
-                        <div className={cn(
-                          "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
-                          automation.enabled ? "right-1" : "left-1"
-                        )}></div>
-                      </button>
-                    </div>
-                    <h3 className="text-xl font-bold text-neutral-900 font-display">{automation.name}</h3>
-                    <p className="text-xs text-neutral-500 mt-1">Sempre ativo às 09:00.</p>
-                  </div>
-                  
-                  <div className="p-8 space-y-6 flex-1">
-                     <div className="space-y-4">
-                        <div className="flex items-center justify-between p-4 bg-neutral-50 rounded-2xl">
-                           <div className="flex items-center gap-3">
-                              <MessageCircle className="h-4 w-4 text-green-600" />
-                              <span className="text-xs font-semibold text-neutral-700">Template WhatsApp</span>
-                           </div>
-                           <CheckCircle2 className="h-4 w-4 text-green-600" />
-                        </div>
-                        <div className="flex items-center justify-between p-4 bg-neutral-50 rounded-2xl">
-                           <div className="flex items-center gap-3">
-                              <Smartphone className="h-4 w-4 text-blue-600" />
-                              <span className="text-xs font-semibold text-neutral-700">Template SMS</span>
-                           </div>
-                           <CheckCircle2 className="h-4 w-4 text-green-600" />
-                        </div>
-                     </div>
-
-                     <div className="bg-primary-50/50 p-4 rounded-2xl border border-primary-100/50">
-                        <p className="text-[10px] text-primary-700 font-bold uppercase tracking-widest mb-2 flex items-center gap-2">
-                           <Clock className="h-3 w-3" />
-                           Última Execução
-                        </p>
-                        <p className="text-[11px] font-semibold text-neutral-700">Hoje às 09:00 - 12 contatos atingidos</p>
-                     </div>
-                  </div>
-
-                  <div className="p-6 bg-neutral-50/50 flex gap-4">
-                     <Button 
-                      onClick={() => setEditingAutomation(automation)}
-                      className="flex-1 rounded-2xl h-12 gap-2 text-xs font-bold"
-                     >
-                        <Settings2 className="h-4 w-4" />
-                        Configurar Template
-                     </Button>
-                  </div>
-                </div>
-              ))}
-
-              <button className="bg-white rounded-[2.5rem] border-2 border-dashed border-neutral-200 p-8 flex flex-col items-center justify-center group hover:border-primary-300 hover:bg-primary-50/10 transition-all">
-                <div className="h-14 w-14 bg-neutral-100 rounded-2xl flex items-center justify-center text-neutral-400 group-hover:bg-primary-100 group-hover:text-primary-600 transition-all mb-4">
-                  <Plus className="h-7 w-7" />
-                </div>
-                <h4 className="text-sm font-bold text-neutral-800">Nova Automação</h4>
-                <p className="text-[10px] text-neutral-400 font-medium">Crie gatilhos personalizados.</p>
-              </button>
-            </div>
-          </motion.div>
-        )}
-
         {activeTab === 'history' && (
           <motion.div 
             key="history"
@@ -871,52 +664,6 @@ export const Messages: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Automation Edit Modal */}
-      {editingAutomation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-[2.5rem] p-10 w-full max-w-2xl shadow-2xl relative"
-          >
-            <h2 className="text-2xl font-bold text-neutral-900 mb-2 font-display">Configurar Automação</h2>
-            <p className="text-sm text-neutral-500 mb-10">{editingAutomation.name}</p>
-
-            <div className="space-y-8">
-               <div className="space-y-3">
-                  <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1 flex items-center gap-2">
-                     <MessageCircle className="h-3 w-3 text-green-600" />
-                     Template WhatsApp
-                  </label>
-                  <textarea 
-                    className="w-full h-24 p-5 bg-neutral-50 rounded-2xl border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm font-medium"
-                    value={editingAutomation.whatsapp_template || ''}
-                    onChange={(e) => setEditingAutomation({ ...editingAutomation, whatsapp_template: e.target.value })}
-                  />
-                  <p className="text-[9px] text-neutral-400 font-bold ml-1 uppercase">Dica: Use {"{{nome}}"} para personalizar com o nome do contato.</p>
-               </div>
-
-               <div className="space-y-3">
-                  <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1 flex items-center gap-2">
-                     <Smartphone className="h-3 w-3 text-blue-600" />
-                     Template SMS
-                  </label>
-                  <textarea 
-                    className="w-full h-24 p-5 bg-neutral-50 rounded-2xl border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm font-medium"
-                    value={editingAutomation.sms_template || ''}
-                    onChange={(e) => setEditingAutomation({ ...editingAutomation, sms_template: e.target.value })}
-                  />
-               </div>
-
-               <div className="flex gap-4 pt-4">
-                  <Button variant="ghost" onClick={() => setEditingAutomation(null)} className="flex-1 rounded-2xl h-14 font-bold">Cancelar</Button>
-                  <Button onClick={() => saveAutomation(editingAutomation)} className="flex-1 rounded-2xl h-14 font-bold shadow-lg shadow-primary-100">Salvar Automação</Button>
-               </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
     </div>
   );
 };

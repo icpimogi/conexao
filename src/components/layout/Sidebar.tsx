@@ -14,7 +14,9 @@ import {
   UserCog,
   Lock,
   Tags,
-  ChevronUp
+  ChevronUp,
+  Database,
+  Radio
 } from 'lucide-react';
 import { useAuth } from '@/src/hooks/useAuth';
 import { cn } from '@/src/lib/utils';
@@ -37,12 +39,14 @@ export const Sidebar: React.FC = () => {
     { name: 'Contatos', icon: Users, path: '/contacts' },
     { name: 'Filiais', icon: Building2, path: '/branches' },
     { name: 'Etiquetas', icon: Tags, path: '/tags' },
-    { name: 'Conexões', icon: Zap, path: '/connections' },
+    { name: 'Automações', icon: Zap, path: '/automations' },
+    { name: 'Conexões', icon: Radio, path: '/connections' },
     { name: 'Mensagens', icon: MessageSquare, path: '/messages' },
   ];
 
   if (user?.role === 'master') {
     navItems.push({ name: 'Usuários', icon: Settings, path: '/users' });
+    navItems.push({ name: 'Backup', icon: Database, path: '/database' });
   }
 
   return (

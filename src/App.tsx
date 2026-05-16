@@ -10,6 +10,8 @@ import { TagsPage } from '@/src/pages/Tags';
 import { Connections } from '@/src/pages/Connections';
 import { Messages } from '@/src/pages/Messages';
 import { Users } from '@/src/pages/Users';
+import { Database } from '@/src/pages/Database';
+import { Automations } from '@/src/pages/Automations';
 
 export default function App() {
   return (
@@ -26,6 +28,8 @@ export default function App() {
             <Route path="/connections" element={<Connections />} />
             <Route path="/messages" element={<Messages />} />
             <Route path="/users" element={<Users />} />
+            <Route path="/database" element={<Database />} />
+            <Route path="/automations" element={<Automations />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

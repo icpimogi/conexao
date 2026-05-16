@@ -33,7 +33,7 @@ const StatCard = ({ title, value, change, icon: Icon, color }: any) => (
 );
 
 import { cn } from '@/src/lib/utils';
-import { checkTablesReady } from '../lib/supabase';
+import { supabase, checkTablesReady } from '../lib/supabase';
 
 export const Dashboard: React.FC = () => {
   const [supabaseStatus, setSupabaseStatus] = React.useState<{ ready?: boolean; error?: string; details?: any }>({});
@@ -53,43 +53,47 @@ export const Dashboard: React.FC = () => {
       const status = await checkTablesReady();
       setSupabaseStatus(status);
       setChecking(false);
+      
+      if (status.ready) {
+        loadData();
+      }
     };
+    
+    const loadData = async () => {
+      try {
+        const [
+          { data: contacts },
+          { data: branches },
+          { data: tags },
+          { data: activitiesToday }
+        ] = await Promise.all([
+          supabase.from('contacts').select('created_at'),
+          supabase.from('branches').select('id'),
+          supabase.from('tags').select('id'),
+          supabase.from('activities').select('id').gte('created_at', new Date(new Date().setHours(0,0,0,0)).toISOString())
+        ]);
+
+        const allContacts = contacts || [];
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        const recentContacts = allContacts.filter(c => new Date(c.created_at) > thirtyDaysAgo);
+        const growth = allContacts.length > 0 ? (recentContacts.length / allContacts.length) * 100 : 0;
+
+        setStats({
+          totalContacts: allContacts.length,
+          totalBranches: (branches || []).length,
+          totalTags: (tags || []).length,
+          contactsGrowth: Math.round(growth),
+          branchesGrowth: (branches || []).length > 0 ? 5 : 0,
+          activityToday: (activitiesToday || []).length
+        });
+      } catch (err) {
+        console.error("Erro ao carregar dados do dashboard:", err);
+      }
+    };
+
     checkStatus();
-
-    const contactsRaw = localStorage.getItem('conexao_contacts');
-    const branchesRaw = localStorage.getItem('conexao_branches');
-    const tagsRaw = localStorage.getItem('conexao_tags');
-    
-    const contacts = contactsRaw ? JSON.parse(contactsRaw) : [];
-    const branches = branchesRaw ? JSON.parse(branchesRaw) : [];
-    const tags = tagsRaw ? JSON.parse(tagsRaw) : [];
-
-    // Simple growth calculation for contacts
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const recentContacts = (contacts as any[]).filter(c => {
-      const createdDate = c.created_at ? new Date(c.created_at) : new Date();
-      return createdDate > thirtyDaysAgo;
-    });
-    
-    const growth = contacts.length > 0 ? (recentContacts.length / contacts.length) * 100 : 0;
-
-    // Activity today
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const todayContacts = (contacts as any[]).filter(c => {
-      const createdDate = c.created_at ? new Date(c.created_at) : new Date();
-      return createdDate > startOfToday;
-    });
-
-    setStats({
-      totalContacts: contacts.length,
-      totalBranches: branches.length,
-      totalTags: tags.length,
-      contactsGrowth: Math.round(growth),
-      branchesGrowth: branches.length > 0 ? 5 : 0, // Mock stable growth for branches
-      activityToday: todayContacts.length * 15 + Math.floor(Math.random() * 50) + 10 // Dynamic activity based on contacts + noise
-    });
   }, []);
 
   const formattedDate = new Date().toLocaleDateString('pt-BR', {

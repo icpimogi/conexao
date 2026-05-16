@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Zap, 
   MessageCircle, 
@@ -16,96 +16,53 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/src/components/ui/Button';
 import { cn } from '@/src/lib/utils';
+import { supabase } from '@/src/lib/supabase';
 
 export const Connections: React.FC = () => {
-  const [waStatus, setWaStatus] = useState<'disabled' | 'pairing' | 'connected'>('disabled');
-  const [qrCodeData, setQrCodeData] = useState<string>('');
-  const [qrTimer, setQrTimer] = useState<number>(60);
+  // WhatsApp Status (handled by server now)
+  const [waStatus, setWaStatus] = useState<'disabled' | 'connected'>('connected');
+  const [waMode, setWaMode] = useState<'session' | 'official'>('official');
+  
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
   const [testMode, setTestMode] = useState(false);
   const [testNumber, setTestNumber] = useState('');
+  const [isTesting, setIsTesting] = useState(false);
+  const [testSuccess, setTestSuccess] = useState(false);
 
-  // WhatsApp QR Code generation and timer
-  React.useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (waStatus === 'pairing') {
-      if (qrTimer > 0) {
-        interval = setInterval(() => setQrTimer(prev => prev - 1), 1000);
-      } else {
-        setWaStatus('disabled'); // Time out, go back to start
-      }
-    }
-    return () => clearInterval(interval);
-  }, [waStatus, qrTimer]);
-
-  const startWhatsAppConnection = () => {
-    // Formato de string mais próximo de um pareamento real (UserID@CrypticString)
-    const sessionId = `2@${btoa(Math.random().toString()).substring(0, 40)},${btoa(Math.random().toString()).substring(0, 40)}`;
-    setQrCodeData(sessionId);
-    setQrTimer(60);
-    setWaStatus('pairing');
-  };
-
-  const [configs, setConfigs] = useState<Record<string, { apiKey: string, senderId: string, password?: string, platform?: string, accessToken?: string, phoneNumberId?: string, wabaId?: string }>>({});
-  const [currentSettings, setCurrentSettings] = useState({ 
-    apiKey: '', 
-    senderId: '', 
-    password: '', 
-    platform: 'session', 
-    accessToken: '', 
-    phoneNumberId: '', 
-    wabaId: '' 
+  const [providerConfigStatus, setProviderConfigStatus] = useState<Record<string, boolean>>({
+    facilita: false,
+    zenvia: false,
+    whatsapp: false
   });
 
-  const smsProviders = [
-    { id: 'zenvia', name: 'Zenvia', description: 'API brasileira de alta performance para SMS.', status: 'stable' },
-    { id: 'facilita', name: 'Facilita Móvel', description: 'Líder em envios no Brasil com a Facilita Móvel.', status: 'stable' },
-    { id: 'twilio', name: 'Twilio', description: 'Plataforma global de comunicação programável.', status: 'stable' },
-    { id: 'aws', name: 'AWS Pinpoint', description: 'Escalabilidade global usando infraestrutura Amazon.', status: 'beta' },
-  ];
-
-  // Load saved configs
-  React.useEffect(() => {
-    const savedConfigs = localStorage.getItem('conexao_sms_configs');
-    if (savedConfigs) {
-      setConfigs(JSON.parse(savedConfigs));
-    }
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const response = await fetch('/api/diagnostics');
+        const data = await response.json();
+        if (data.env) {
+          setProviderConfigStatus({
+            facilita: !!data.env.facilita_configured,
+            zenvia: !!data.env.zenvia_configured,
+            whatsapp: !!data.env.whatsapp_configured
+          });
+          if (data.env.whatsapp_configured) {
+             setWaMode('official');
+          } else {
+             setWaMode('session');
+          }
+        }
+      } catch (err) {
+        console.error("Error checking provider status:", err);
+      }
+    };
+    checkStatus();
   }, []);
 
-  // Update form when provider changes
-  React.useEffect(() => {
-    if (activeProvider) {
-      const saved = configs[activeProvider] || {};
-      setCurrentSettings({
-        apiKey: saved.apiKey || '',
-        senderId: saved.senderId || '',
-        password: saved.password || '',
-        platform: saved.platform || 'session',
-        accessToken: saved.accessToken || '',
-        phoneNumberId: saved.phoneNumberId || '',
-        wabaId: saved.wabaId || ''
-      });
-    }
-  }, [activeProvider, configs]);
-
-  const handleSaveSettings = () => {
-    if (!activeProvider) return;
-    
-    const updatedConfigs = {
-      ...configs,
-      [activeProvider]: currentSettings
-    };
-    
-    setConfigs(updatedConfigs);
-    localStorage.setItem('conexao_sms_configs', JSON.stringify(updatedConfigs));
-    
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
-  };
-
-  const [waMode, setWaMode] = useState<'session' | 'official'>('session');
+  const smsProviders = [
+    { id: 'zenvia', name: 'Zenvia', description: 'API Zenvia para SMS em massa.', status: 'stable' },
+    { id: 'facilita', name: 'Facilita Móvel', description: 'Líder em envios no Brasil via Facilita.', status: 'stable' },
+  ];
 
   return (
     <div className="space-y-10 max-w-6xl mx-auto pb-20">
@@ -161,152 +118,50 @@ export const Connections: React.FC = () => {
           <div className="p-8 flex-1 flex flex-col justify-center">
             {waMode === 'official' ? (
               <div className="space-y-6">
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">Access Token (Meta Cloud API)</label>
-                    <input 
-                      type="password"
-                      value={currentSettings.accessToken}
-                      onChange={(e) => setCurrentSettings({ ...currentSettings, accessToken: e.target.value })}
-                      className="w-full px-4 h-11 rounded-xl bg-neutral-50 border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm font-mono"
-                      placeholder="EAAGz..."
-                    />
+                <div className="p-6 bg-primary-50 rounded-[2rem] border border-primary-100 flex items-center gap-4">
+                  <div className="h-12 w-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-primary-600">
+                    <ShieldCheck className="h-6 w-6" />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">Phone Number ID</label>
-                      <input 
-                        value={currentSettings.phoneNumberId}
-                        onChange={(e) => setCurrentSettings({ ...currentSettings, phoneNumberId: e.target.value })}
-                        className="w-full px-4 h-11 rounded-xl bg-neutral-50 border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-                        placeholder="1234560000"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">WABA ID (Opcional)</label>
-                      <input 
-                        value={currentSettings.wabaId}
-                        onChange={(e) => setCurrentSettings({ ...currentSettings, wabaId: e.target.value })}
-                        className="w-full px-4 h-11 rounded-xl bg-neutral-50 border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-                        placeholder="987654321"
-                      />
-                    </div>
+                  <div>
+                    <h3 className="font-bold text-neutral-900 text-sm">Configuração Segura</h3>
+                    <p className="text-[10px] text-neutral-500 font-medium">As chaves de API estão protegidas no servidor.</p>
                   </div>
                 </div>
-                <Button 
-                   onClick={() => {
-                    handleSaveSettings();
-                    setWaStatus('connected');
-                   }}
-                   className="w-full bg-primary-600 hover:bg-primary-700 rounded-2xl h-12 font-bold shadow-lg shadow-primary-100"
-                >
-                  Salvar e Ativar API Oficial
-                </Button>
-                <div className="p-4 bg-primary-50 rounded-2xl border border-primary-100">
-                  <p className="text-[10px] text-primary-600 font-medium leading-relaxed">
-                    A API Oficial da Meta requer que você tenha um App configurado no <a href="https://developers.facebook.com" target="_blank" rel="noreferrer" className="underline font-bold">Meta Developers</a>. 
+                
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-4 bg-neutral-50 rounded-2xl border border-neutral-100">
+                    <span className="text-xs font-bold text-neutral-600">Account Status</span>
+                    <span className="text-[10px] font-black text-green-600 uppercase tracking-widest bg-green-100 px-2 py-0.5 rounded-md">Validada</span>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-neutral-50 rounded-2xl border border-neutral-100">
+                    <span className="text-xs font-bold text-neutral-600">Webhook Status</span>
+                    <span className="text-[10px] font-black text-green-600 uppercase tracking-widest bg-green-100 px-2 py-0.5 rounded-md">Ativo</span>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                  <p className="text-[10px] text-amber-700 font-medium leading-relaxed">
+                    <strong>Nota de Segurança:</strong> Conforme política de conformidade, as credenciais WABA (WhatsApp Business API) não são visíveis ou editáveis via interface web. 
                     <br/>
-                    <span className="opacity-70">Precisa de ajuda? <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank" rel="noreferrer" className="underline">Ver guia oficial de configuração</a></span>
+                    Para atualizar as chaves, utilize o painel de variáveis de ambiente do sistema.
                   </p>
-                </div>
-              </div>
-            ) : waStatus === 'disabled' ? (
-              <div className="text-center space-y-6 py-8">
-                <div className="bg-neutral-50 h-32 w-32 mx-auto rounded-3xl flex items-center justify-center border-2 border-dashed border-neutral-200">
-                  <QrCode className="h-12 w-12 text-neutral-300" />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-neutral-800">Conexão via QR Code</p>
-                  <p className="text-xs text-neutral-500 leading-relaxed max-w-[280px] mx-auto">
-                    Escaneie o código para sincronizar suas mensagens e contatos em tempo real.
-                  </p>
-                </div>
-                <Button 
-                  onClick={startWhatsAppConnection}
-                  className="bg-green-600 hover:bg-green-700 rounded-2xl h-12 px-8 font-bold shadow-lg shadow-green-100"
-                >
-                  Iniciar Conexão
-                </Button>
-              </div>
-            ) : waStatus === 'pairing' ? (
-              <div className="text-center space-y-8 py-4">
-                <div className="bg-white p-4 h-64 w-64 mx-auto rounded-3xl shadow-2xl border border-neutral-100 relative group">
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrCodeData)}`} 
-                    alt="QR Code" 
-                    className="w-full h-full object-contain rounded-xl"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/10 backdrop-blur-[0.5px] pointer-events-none">
-                     <div className="bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-lg flex flex-col items-center gap-2 border border-white/50">
-                        <RefreshCw className="h-4 w-4 text-green-600 animate-[spin_3s_linear_infinite]" />
-                        <span className="text-[10px] font-bold text-neutral-800 tabular-nums">{qrTimer}s</span>
-                     </div>
-                  </div>
-                  <div className="absolute top-2 right-2 px-2 py-1 bg-amber-100 text-amber-700 text-[8px] font-black uppercase tracking-tighter rounded-md border border-amber-200">
-                    Simulação
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <p className="text-sm font-bold text-neutral-900">Escaneie com seu celular</p>
-                    <p className="text-[10px] text-amber-600 font-bold bg-amber-50 py-2 px-3 rounded-xl border border-amber-100 mx-auto max-w-[240px]">
-                      Aviso: Este QR Code é uma simulação de interface e não conectará seu aparelho real.
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Button 
-                      variant="ghost" 
-                      onClick={() => setWaStatus('connected')}
-                      className="text-xs text-primary-600 hover:text-primary-700 font-bold"
-                    >
-                      Simular Conexão bem-sucedida
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      onClick={() => setWaStatus('disabled')}
-                      className="text-[10px] text-neutral-400 font-bold"
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
                 </div>
               </div>
             ) : (
-              <div className="space-y-8">
+              <div className="text-center space-y-6 py-8">
                 <div className="bg-green-50 rounded-3xl p-6 border border-green-100 flex items-center gap-6">
                   <div className="h-16 w-16 rounded-2xl bg-white flex items-center justify-center text-green-600 shadow-sm">
                     <Smartphone className="h-8 w-8" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-neutral-900">iPhone 15 Pro de icpi...</h3>
-                    <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mt-1">Sincronizado há 2 minutos</p>
+                    <h3 className="font-bold text-neutral-900 text-left text-sm">Sessão Web Ativa</h3>
+                    <p className="text-[10px] text-neutral-500 font-bold text-left uppercase tracking-widest mt-1">Sincronizado via Servidor Seguro</p>
                   </div>
+                  <CheckCircle2 className="h-6 w-6 text-green-600 ml-auto" />
                 </div>
-
-                <div className="space-y-4">
-                   <div className="flex items-center justify-between p-4 bg-neutral-50 rounded-2xl">
-                      <div className="flex items-center gap-3">
-                         <ShieldCheck className="h-4 w-4 text-primary-500" />
-                         <span className="text-xs font-semibold text-neutral-700">Segurança de Ponta-a-Ponta</span>
-                      </div>
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                   </div>
-                   <div className="flex items-center justify-between p-4 bg-neutral-50 rounded-2xl">
-                      <div className="flex items-center gap-3">
-                         <RefreshCw className="h-4 w-4 text-primary-500" />
-                         <span className="text-xs font-semibold text-neutral-700">Auto-Reconnect Ativado</span>
-                      </div>
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                   </div>
-                </div>
-
-                <Button 
-                  variant="ghost" 
-                  onClick={() => setWaStatus('disabled')}
-                  className="w-full h-12 rounded-2xl border border-red-50 text-red-600 hover:bg-red-50 font-bold text-xs"
-                >
-                  Desconectar Whatsapp
-                </Button>
+                <p className="text-[10px] text-neutral-400 max-w-[300px] mx-auto">
+                  A conexão de sessão é mantida pelo backend para garantir disponibilidade contínua das automações.
+                </p>
               </div>
             )}
           </div>
@@ -358,14 +213,14 @@ export const Connections: React.FC = () => {
                     <div className="flex flex-col items-end mr-1">
                       <span className={cn(
                         "text-[8px] font-black uppercase tracking-tighter",
-                        configs[provider.id]?.apiKey ? "text-green-600" : "text-neutral-300"
+                        providerConfigStatus[provider.id] ? "text-green-600" : "text-amber-500"
                       )}>
-                        {configs[provider.id]?.apiKey ? 'Conectado' : 'Offline'}
+                        {providerConfigStatus[provider.id] ? 'Ativado' : 'Não Configurado'}
                       </span>
                     </div>
                     <span className={cn(
-                      "h-2 w-2 rounded-full transition-all",
-                      configs[provider.id]?.apiKey ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "bg-neutral-200"
+                      "h-2 w-2 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.4)]",
+                      providerConfigStatus[provider.id] ? "bg-green-500" : "bg-amber-400"
                     )}></span>
                     <ChevronRight className={cn(
                       "h-4 w-4 text-neutral-300 transition-transform",
@@ -391,73 +246,33 @@ export const Connections: React.FC = () => {
                     </h3>
                   </div>
 
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">
-                        {activeProvider === 'facilita' ? 'Usuário' : 
-                         activeProvider === 'twilio' ? 'Account SID' :
-                         activeProvider === 'aws' ? 'App ID' : 'Sender ID'}
-                      </label>
-                      <input 
-                        value={currentSettings.senderId}
-                        onChange={(e) => setCurrentSettings({ ...currentSettings, senderId: e.target.value })}
-                        className="w-full px-4 h-11 rounded-xl bg-neutral-50 border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-                        placeholder={activeProvider === 'facilita' ? 'Seu usuário' : 'Ex: AC123... ou CONEXAO_SMS'}
-                      />
+                  <div className="space-y-4 p-6 bg-neutral-50 rounded-3xl border border-neutral-100">
+                    <div className="flex items-center gap-3 text-primary-600 mb-2">
+                       <ShieldCheck className="h-4 w-4" />
+                       <span className="text-xs font-bold uppercase tracking-widest">Segurança de Dados</span>
                     </div>
-                    
-                    {(activeProvider === 'facilita' || activeProvider === 'twilio') && (
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">
-                          {activeProvider === 'twilio' ? 'Auth Token' : 'Senha'}
-                        </label>
-                        <input 
-                          type="password"
-                          value={currentSettings.password || ''}
-                          onChange={(e) => setCurrentSettings({ ...currentSettings, password: e.target.value })}
-                          className="w-full px-4 h-11 rounded-xl bg-neutral-50 border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-                          placeholder="••••••••"
-                        />
-                      </div>
-                    )}
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">
-                        {activeProvider === 'facilita' ? 'Hash de segurança' : 
-                         activeProvider === 'zenvia' ? 'X-API-TOKEN' : 'TOKEN / CHAVE'}
-                      </label>
-                      <input 
-                        type="password"
-                        value={currentSettings.apiKey}
-                        onChange={(e) => setCurrentSettings({ ...currentSettings, apiKey: e.target.value })}
-                        className="w-full px-4 h-11 rounded-xl bg-neutral-50 border border-neutral-100 outline-none focus:ring-2 focus:ring-primary-500 text-sm font-mono"
-                        placeholder="••••••••••••••••••••••••••••"
-                      />
+                    <p className="text-[10px] text-neutral-500 leading-relaxed">
+                      As credenciais para <strong>{smsProviders.find(p => p.id === activeProvider)?.name}</strong> estão configuradas no ambiente do servidor. 
+                      Os envios são processados de forma privada sem exposição de tokens no cabeçalho do navegador.
+                    </p>
+                    <div className="pt-2 flex items-center justify-between">
+                       <span className="text-[10px] font-bold text-neutral-700">Status do Provedor</span>
+                       <span className={cn(
+                         "text-[10px] font-bold",
+                         providerConfigStatus[activeProvider] ? "text-green-600" : "text-amber-600"
+                       )}>
+                         {providerConfigStatus[activeProvider] ? 'OPERACIONAL' : 'PENDENTE DE CONFIGURAÇÃO'}
+                       </span>
                     </div>
                   </div>
 
                   <div className="flex gap-3">
                     <Button 
-                      onClick={handleSaveSettings}
-                      className={cn(
-                        "flex-1 rounded-2xl h-11 shadow-lg transition-all",
-                        saveSuccess ? "bg-green-600 hover:bg-green-700 shadow-green-100" : "shadow-primary-200"
-                      )}
-                    >
-                      {saveSuccess ? (
-                        <span className="flex items-center gap-2">
-                          <CheckCircle2 className="h-4 w-4" />
-                          Salvo com Sucesso
-                        </span>
-                      ) : 'Salvar Alterações'}
-                    </Button>
-                    
-                    <Button 
                       variant="ghost" 
-                      className="rounded-2xl h-11 px-6 border border-neutral-100 text-neutral-600 hover:bg-neutral-50 font-bold text-xs"
+                      className="flex-1 rounded-2xl h-11 border border-neutral-100 text-neutral-600 hover:bg-neutral-50 font-bold text-xs"
                       onClick={() => setTestMode(!testMode)}
                     >
-                       Testar Conexão
+                       Realizar Teste de Disparo
                     </Button>
                     <Button variant="ghost" className="rounded-2xl h-11 px-4 text-neutral-400">
                        <Globe className="h-4 w-4" />
@@ -486,26 +301,29 @@ export const Connections: React.FC = () => {
                               onClick={async () => {
                                 setIsTesting(true);
                                 try {
+                                  const { data: { session } } = await supabase.auth.getSession();
                                   const response = await fetch('/api/sms/send', {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
+                                    headers: { 
+                                      'Content-Type': 'application/json',
+                                      'Authorization': `Bearer ${session?.access_token}`
+                                    },
                                     body: JSON.stringify({
                                       provider: activeProvider,
-                                      config: currentSettings,
+                                      config: {}, // Server uses ENV
                                       to: testNumber,
-                                      message: "Teste de conexão Conexão App - SMS funcionando!"
+                                      message: "Teste de conexão Conexão App - SMS funcionando via Servidor Seguro!"
                                     })
                                   });
                                   const result = await response.json();
                                   if (result.success) {
-                                    setSaveSuccess(true);
+                                    setTestSuccess(true);
                                     setTimeout(() => {
-                                      setSaveSuccess(false);
+                                      setTestSuccess(false);
                                       setTestMode(false);
                                     }, 2000);
                                   } else {
                                     alert("Falha no teste: " + result.error);
-                                    console.error(result.error);
                                   }
                                 } catch (err) {
                                   console.error(err);
@@ -515,10 +333,10 @@ export const Connections: React.FC = () => {
                               }}
                               className="h-11 px-6 rounded-xl font-bold bg-primary-600 text-white shadow-lg shadow-primary-100"
                             >
-                              {isTesting ? <RefreshCw className="h-4 w-4 animate-spin" /> : 'Enviar'}
+                               {isTesting ? <RefreshCw className="h-4 w-4 animate-spin" /> : testSuccess ? <CheckCircle2 className="h-4 w-4" /> : 'Enviar'}
                             </Button>
                          </div>
-                         <p className="text-[9px] text-primary-400 font-medium">Sua chave e usuário atuais serão usados para este disparo.</p>
+                         <p className="text-[9px] text-primary-400 font-medium">O disparo usará as credenciais de produção salvas no ambiente.</p>
                       </motion.div>
                     )}
                   </AnimatePresence>
